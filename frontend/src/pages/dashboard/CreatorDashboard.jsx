@@ -412,14 +412,15 @@ const RequestCard = ({ request, onAccept, onDecline, onChat, loading, showAction
             </Button>
           </>
         )}
-        {request.status === 'accepted' && onChat && (
+        {/* Chat available for both pending and accepted requests */}
+        {(request.status === 'pending' || request.status === 'accepted') && onChat && (
           <Button
             onClick={onChat}
-            className="btn-primary flex-1"
+            className={request.status === 'accepted' ? "btn-primary flex-1" : "btn-secondary flex-1"}
             data-testid={`chat-request-${request.id}`}
           >
             <MessageSquare className="w-4 h-4 mr-2" />
-            Open Chat
+            {request.status === 'pending' ? 'Message Brand' : 'Open Chat'}
           </Button>
         )}
       </div>

@@ -507,10 +507,15 @@ const SentRequestCard = ({ request, onChat, onViewCreator }) => {
           </div>
         </div>
         
-        {request.status === 'accepted' && (
-          <Button onClick={onChat} className="btn-primary" data-testid={`chat-btn-${request.id}`}>
+        {/* Chat available for pending and accepted requests */}
+        {request.status !== 'declined' && (
+          <Button 
+            onClick={onChat} 
+            className={request.status === 'accepted' ? "btn-primary" : "btn-secondary"}
+            data-testid={`chat-btn-${request.id}`}
+          >
             <MessageSquare className="w-4 h-4 mr-2" />
-            Chat
+            {request.status === 'pending' ? 'Message Creator' : 'Chat'}
           </Button>
         )}
       </div>
