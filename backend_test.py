@@ -222,7 +222,7 @@ class OrangeMarketplaceAPITester:
             "deliverables": "2 Reels, 3 Stories",
             "timeline": "1 week"
         }
-        success, response = self.run_test("Create Collaboration Request", "POST", "requests", 201, request_data, self.business_token)
+        success, response = self.run_test("Create Collaboration Request", "POST", "requests/", 201, request_data, self.business_token)
         if success and 'id' in response:
             self.collaboration_request_id = response['id']
             print(f"   Collaboration request ID: {self.collaboration_request_id}")
