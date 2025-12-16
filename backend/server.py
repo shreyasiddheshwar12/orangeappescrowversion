@@ -480,7 +480,7 @@ async def get_business_by_id(business_id: str):
 
 # ============== COLLABORATION REQUEST ROUTES ==============
 
-@request_router.post("/", response_model=CollaborationRequestResponse)
+@request_router.post("/", response_model=CollaborationRequestResponse, status_code=status.HTTP_201_CREATED)
 async def create_request(req_data: CollaborationRequestCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "business":
         raise HTTPException(status_code=403, detail="Only businesses can send collaboration requests")

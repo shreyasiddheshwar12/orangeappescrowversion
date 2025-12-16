@@ -44,14 +44,15 @@ const CreatorDashboard = () => {
     }
   };
 
-  const handleRequestAction = async (requestId, status) => {
+  const handleRequestAction = async (requestId, newStatus) => {
     setActionLoading(requestId);
     try {
-      await requestsAPI.updateStatus(requestId, status);
+      await requestsAPI.updateStatus(requestId, newStatus);
+      // Force UI update with new status
       setRequests(prev => prev.map(r => 
-        r.id === requestId ? { ...r, status } : r
+        r.id === requestId ? { ...r, status: newStatus } : r
       ));
-      toast.success(status === 'accepted' ? "Request accepted! Time to make magic ✨" : "Request declined");
+      toast.success(newStatus === 'accepted' ? "Request accepted! Time to make magic ✨" : "Request declined");
     } catch (error) {
       toast.error("Failed to update request");
     } finally {
