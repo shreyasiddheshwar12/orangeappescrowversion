@@ -1,0 +1,219 @@
+{
+  "design_system": {
+    "identity": {
+      "name": "Orange",
+      "vibe": "Juicy, Optimistic, Soft Pop, Gen-Z",
+      "core_values": ["Freshness", "Creativity", "Connection", "Playfulness"],
+      "voice_and_tone": {
+        "style": "Gen-Z Friendly, Catchy, Emoji-rich",
+        "microcopy_examples": {
+          "success": "Squeezed it! 🍊✨",
+          "error": "Oop, that went sour. Try again? 🍋",
+          "loading": "Juicing the data... 🧃",
+          "empty_state": "No collabs yet… but your Orange is fresh. The right brand is on its way 🍊✨",
+          "cta": "Let's make your Orange profile irresistible ✨"
+        }
+      }
+    },
+    "typography": {
+      "font_family": {
+        "headings": "Syne, sans-serif",
+        "body": "Plus Jakarta Sans, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "installation_instructions": "Import fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');",
+      "scale": {
+        "h1": "text-5xl md:text-7xl font-bold tracking-tight leading-[0.9]",
+        "h2": "text-4xl md:text-5xl font-bold tracking-tight",
+        "h3": "text-2xl md:text-3xl font-semibold",
+        "body": "text-base md:text-lg leading-relaxed",
+        "caption": "text-sm font-medium tracking-wide uppercase text-muted-foreground"
+      }
+    },
+    "colors": {
+      "palette": {
+        "primary": {
+          "DEFAULT": "#FF6B00",
+          "foreground": "#FFFFFF",
+          "hover": "#E65A00",
+          "light": "#FFD8C2"
+        },
+        "secondary": {
+          "DEFAULT": "#FFD8C2",
+          "foreground": "#2D241E"
+        },
+        "background": {
+          "DEFAULT": "#FFFBF7",
+          "paper": "#FFFFFF"
+        },
+        "text": {
+          "primary": "#2D241E",
+          "secondary": "#786C66",
+          "muted": "#A89F99"
+        },
+        "accent": {
+          "green": "#CCF381",
+          "blue": "#4D96FF",
+          "pink": "#FF8CC6"
+        }
+      },
+      "tailwind_config_override": {
+        "colors": {
+          "border": "hsl(var(--border))",
+          "input": "hsl(var(--input))",
+          "ring": "hsl(var(--ring))",
+          "background": "#FFFBF7",
+          "foreground": "#2D241E",
+          "primary": {
+            "DEFAULT": "#FF6B00",
+            "foreground": "#FFFFFF"
+          },
+          "secondary": {
+            "DEFAULT": "#FFD8C2",
+            "foreground": "#2D241E"
+          },
+          "destructive": {
+            "DEFAULT": "#FF453A",
+            "foreground": "#FFFFFF"
+          },
+          "muted": {
+            "DEFAULT": "#F5EFE6",
+            "foreground": "#786C66"
+          },
+          "accent": {
+            "DEFAULT": "#CCF381",
+            "foreground": "#2D241E"
+          },
+          "popover": {
+            "DEFAULT": "#FFFFFF",
+            "foreground": "#2D241E"
+          },
+          "card": {
+            "DEFAULT": "#FFFFFF",
+            "foreground": "#2D241E"
+          }
+        },
+        "borderRadius": {
+          "lg": "1.5rem",
+          "md": "1rem",
+          "sm": "0.75rem"
+        }
+      }
+    },
+    "layout": {
+      "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+      "spacing": {
+        "section_gap": "py-24 md:py-32",
+        "element_gap": "gap-6 md:gap-8"
+      },
+      "grid_system": {
+        "bento": "grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6",
+        "marketplace": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+      }
+    },
+    "components": {
+      "buttons": {
+        "primary": "bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-8 py-6 font-bold shadow-[0_4px_14px_0_rgba(255,107,0,0.39)] transition-all hover:scale-105 active:scale-95",
+        "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-8 py-6 font-bold transition-all hover:scale-105 active:scale-95",
+        "outline": "border-2 border-primary text-primary hover:bg-primary/10 rounded-full px-8 py-6 font-bold transition-all"
+      },
+      "cards": {
+        "base": "bg-white rounded-3xl border border-orange-100 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-1",
+        "creator": "aspect-[3/4] relative overflow-hidden rounded-3xl group cursor-pointer",
+        "brand": "p-6 rounded-3xl bg-white border border-orange-100 flex flex-col gap-4"
+      },
+      "inputs": {
+        "base": "rounded-2xl border-orange-200 bg-white px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground/50"
+      }
+    },
+    "visual_enhancers": {
+      "shadows": {
+        "soft_orange": "0 10px 40px -10px rgba(255, 107, 0, 0.15)",
+        "float": "0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.01)"
+      },
+      "gradients": {
+        "hero": "bg-gradient-to-br from-orange-50 via-white to-orange-100",
+        "text": "bg-clip-text text-transparent bg-gradient-to-r from-primary to-orange-600"
+      },
+      "decorations": {
+        "noise": "opacity-50 mix-blend-overlay pointer-events-none fixed inset-0 z-50 bg-[url('https://grainy-gradients.vercel.app/noise.svg')]",
+        "blobs": "absolute blur-3xl opacity-30 animate-pulse"
+      }
+    },
+    "motion": {
+      "transitions": "transition-all duration-300 ease-out",
+      "hover_effects": "hover:scale-[1.02] hover:rotate-1",
+      "page_transition": "animate-in fade-in slide-in-from-bottom-4 duration-500"
+    },
+    "assets": {
+      "images": {
+        "hero_background": "https://images.unsplash.com/photo-1743187249275-3d8e8c6ec346?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwxfHxvcmFuZ2UlMjBmcnVpdCUyMGFydGlzdGljJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzY1ODY0NDY2fDA&ixlib=rb-4.1.0&q=85",
+        "creators": [
+          {
+            "url": "https://images.unsplash.com/photo-1683276221970-7b7e754c8185?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxHZW4lMjBaJTIwZmFzaGlvbiUyMGNyZWF0b3IlMjBjb2xvcmZ1bHxlbnwwfHx8fDE3NjU4NjQ0NjF8MA&ixlib=rb-4.1.0&q=85",
+            "alt": "Gen Z Creator Tie Dye",
+            "category": "fashion"
+          },
+          {
+            "url": "https://images.unsplash.com/photo-1649089423209-499c240f454f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwyfHxHZW4lMjBaJTIwZmFzaGlvbiUyMGNyZWF0b3IlMjBjb2xvcmZ1bHxlbnwwfHx8fDE3NjU4NjQ0NjF8MA&ixlib=rb-4.1.0&q=85",
+            "alt": "Streetwear Creator",
+            "category": "lifestyle"
+          },
+          {
+            "url": "https://images.unsplash.com/photo-1678553370169-b4f5a88603ee?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwzfHxHZW4lMjBaJTIwZmFzaGlvbiUyMGNyZWF0b3IlMjBjb2xvcmZ1bHxlbnwwfHx8fDE3NjU4NjQ0NjF8MA&ixlib=rb-4.1.0&q=85",
+            "alt": "Tie Dye Hat Creator",
+            "category": "art"
+          }
+        ],
+        "brands": [
+          {
+            "url": "https://images.unsplash.com/photo-1700107648886-7feca988d0cc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxhZXN0aGV0aWMlMjBza2luY2FyZSUyMHByb2R1Y3QlMjBicmFuZCUyMG1pbmltYWx8ZW58MHx8fHwxNzY1ODY0NDY1fDA&ixlib=rb-4.1.0&q=85",
+            "alt": "Pink Skincare Brand",
+            "category": "beauty"
+          },
+          {
+            "url": "https://images.unsplash.com/photo-1677726050564-6abb77837338?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwyfHxhZXN0aGV0aWMlMjBza2luY2FyZSUyMHByb2R1Y3QlMjBicmFuZCUyMG1pbmltYWx8ZW58MHx8fHwxNzY1ODY0NDY1fDA&ixlib=rb-4.1.0&q=85",
+            "alt": "Beach Lotion Brand",
+            "category": "wellness"
+          }
+        ],
+        "abstract": [
+          {
+            "url": "https://images.unsplash.com/photo-1743187248758-b2b402636a55?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwyfHxvcmFuZ2UlMjBmcnVpdCUyMGFydGlzdGljJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzY1ODY0NDY2fDA&ixlib=rb-4.1.0&q=85",
+            "alt": "Peeled Tangerine Art"
+          },
+          {
+            "url": "https://images.unsplash.com/photo-1712273119941-724231753648?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzR8MHwxfHNlYXJjaHwzfHxvcmFuZ2UlMjBmcnVpdCUyMGFydGlzdGljJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzY1ODY0NDY2fDA&ixlib=rb-4.1.0&q=85",
+            "alt": "Falling Orange"
+          }
+        ]
+      }
+    }
+  },
+  "instructions_to_main_agent": {
+    "setup": [
+      "Install 'lucide-react' for icons.",
+      "Install 'framer-motion' for animations.",
+      "Update 'tailwind.config.js' with the colors and border radius provided in 'design_system.colors.tailwind_config_override'.",
+      "Add the Google Fonts import to 'index.css'."
+    ],
+    "implementation_rules": [
+      "Use 'Syne' font for all Headings (h1-h3).",
+      "Use 'Plus Jakarta Sans' for all Body text.",
+      "Buttons must be 'rounded-full' (pill shape).",
+      "Cards must be 'rounded-3xl' (super rounded).",
+      "Use the 'microcopy_examples' for placeholders, success messages, and empty states.",
+      "For the 'Creator Marketplace', use a masonry or bento grid layout, not a simple table.",
+      "Ensure the 'Primary' orange color is used for main CTAs.",
+      "Use 'Secondary' peach color for backgrounds of active states or accents.",
+      "Add 'data-testid' to all interactive elements."
+    ],
+    "universal_guidelines": [
+      "Do not use gradients for dark colors.",
+      "Avoid generic centered layouts; use asymmetry where possible.",
+      "Use 2-3x more spacing than typical designs (p-8, p-12).",
+      "Every interaction needs a micro-animation (hover scale, tap shrink).",
+      "Use 'sonner' for toasts."
+    ]
+  }
+}
