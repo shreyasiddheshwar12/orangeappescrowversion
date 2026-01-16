@@ -4,14 +4,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import { 
   ArrowLeft, ArrowRight, Check, Loader2, Upload, X, Instagram, Globe,
-  MapPin, Building2, Image as ImageIcon
+  MapPin, Building2, Image as ImageIcon, Plus, Trash2, Briefcase
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Progress } from '../../components/ui/progress';
-import { businessAPI, uploadAPI } from '../../lib/api';
+import { Badge } from '../../components/ui/badge';
+import { businessAPI, uploadAPI, instagramAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -21,12 +22,19 @@ const CATEGORIES = [
   'Sports', 'Automotive', 'Gaming', 'E-commerce', 'Startup', 'Agency'
 ];
 
+const NICHES = [
+  'Fashion', 'Beauty', 'Tech', 'Food', 'Fitness', 'Travel', 'Lifestyle',
+  'Gaming', 'Entertainment', 'Education', 'Finance', 'Parenting'
+];
+
 const BusinessOnboarding = () => {
   const navigate = useNavigate();
   const { updateUser } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [verifyingInstagram, setVerifyingInstagram] = useState(false);
+  const [instagramVerified, setInstagramVerified] = useState(false);
 
   const [formData, setFormData] = useState({
     brandName: '',
@@ -37,10 +45,14 @@ const BusinessOnboarding = () => {
     instagramHandle: '',
     instagramUrl: '',
     profilePhotoUrl: '',
-    mediaGallery: []
+    mediaGallery: [],
+    budgetRange: '',
+    preferredNiches: [],
+    isOpenToBarter: false,
+    pastCollaborations: [] // New: Array of past collab objects
   });
 
-  const totalSteps = 3;
+  const totalSteps = 4; // Increased to 4 steps
   const progress = (step / totalSteps) * 100;
 
   const updateField = (field, value) => {
