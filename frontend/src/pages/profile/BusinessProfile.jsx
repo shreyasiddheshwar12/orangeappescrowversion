@@ -10,7 +10,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
-import { marketplaceAPI, paymentsAPI, requestsAPI } from '../../lib/api';
+import { marketplaceAPI, paymentsAPI, requestsAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -94,7 +94,7 @@ const BusinessProfile = () => {
       // Update credits
       loadCredits();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to unlock brand");
+      toast.error(getErrorMessage(error, "Failed to unlock brand"));
     } finally {
       setUnlocking(false);
     }
