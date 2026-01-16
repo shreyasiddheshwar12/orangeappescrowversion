@@ -849,6 +849,11 @@ async def get_unlocked_brand(brand_id: str, current_user: dict = Depends(get_cur
     if not brand:
         raise HTTPException(status_code=404, detail="Brand not found")
     
+    # Parse past collaborations from stored data
+    past_collabs = []
+    for collab in brand.get("pastCollaborations", []):
+        past_collabs.append(PastCollaboration(**collab) if isinstance(collab, dict) else collab)
+    
     return BrandUnlocked(
         id=brand["id"],
         brandName=brand.get("brandName", ""),
@@ -858,8 +863,8 @@ async def get_unlocked_brand(brand_id: str, current_user: dict = Depends(get_cur
         budgetRange=brand.get("budgetRange", ""),
         preferredNiches=brand.get("preferredNiches", []),
         isOpenToBarter=brand.get("isOpenToBarter", False),
-        pastCampaigns=brand.get("pastCampaigns", []),
         pastCollabCount=brand.get("pastCollabCount", 0),
+        pastCollaborations=past_collabs,
         profilePhotoUrl=brand.get("profilePhotoUrl", "")
     )
 
