@@ -41,7 +41,7 @@ const Chat = () => {
       setCampaign(campaignRes.data);
       setMessages(messagesRes.data);
     } catch (error) {
-      toast.error("Failed to load chat");
+      toast.error(getErrorMessage(error, "Failed to load chat"));
       navigate(-1);
     } finally {
       setLoading(false);
@@ -76,7 +76,7 @@ const Chat = () => {
         toast.warning("Message blocked - external contact sharing is not allowed before payment");
       }
     } catch (error) {
-      toast.error("Failed to send message");
+      toast.error(getErrorMessage(error, "Failed to send message"));
     } finally {
       setSending(false);
     }
@@ -125,7 +125,7 @@ const Chat = () => {
       const razorpay = new window.Razorpay(options);
       razorpay.open();
     } catch (error) {
-      toast.error("Failed to create payment order");
+      toast.error(getErrorMessage(error, "Failed to create payment order"));
     } finally {
       setPayingEscrow(false);
     }
