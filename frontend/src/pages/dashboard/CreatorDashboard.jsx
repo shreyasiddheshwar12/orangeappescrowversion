@@ -373,6 +373,71 @@ const CreatorDashboard = () => {
                   </TabsContent>
                 </Tabs>
               )}
+                </TabsContent>
+
+                {/* Brands Tab */}
+                <TabsContent value="brands">
+                  <div className="mb-6">
+                    <h2 className="font-heading text-2xl font-bold mb-4">Discover Brands 🏢</h2>
+                    
+                    {/* Filters */}
+                    <div className="flex flex-wrap gap-3 mb-6">
+                      <Select 
+                        value={brandFilters.industry} 
+                        onValueChange={(v) => setBrandFilters(f => ({...f, industry: v}))}
+                      >
+                        <SelectTrigger className="w-[150px] rounded-full">
+                          <SelectValue placeholder="Industry" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Industries</SelectItem>
+                          <SelectItem value="Beauty">Beauty</SelectItem>
+                          <SelectItem value="Fashion">Fashion</SelectItem>
+                          <SelectItem value="Fitness">Fitness</SelectItem>
+                          <SelectItem value="Food">Food</SelectItem>
+                          <SelectItem value="Tech">Tech</SelectItem>
+                          <SelectItem value="Travel">Travel</SelectItem>
+                          <SelectItem value="Lifestyle">Lifestyle</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      <Button
+                        variant={brandFilters.openToBarter ? "default" : "outline"}
+                        className="rounded-full"
+                        onClick={() => setBrandFilters(f => ({...f, openToBarter: !f.openToBarter}))}
+                      >
+                        🤝 Barter Only
+                      </Button>
+                    </div>
+                  </div>
+
+                  {loadingBrands ? (
+                    <div className="text-center py-12">
+                      <Loader2 className="w-8 h-8 mx-auto text-primary animate-spin mb-2" />
+                      <p className="text-muted-foreground">Finding brands...</p>
+                    </div>
+                  ) : brands.length === 0 ? (
+                    <div className="card-orange p-12 text-center">
+                      <span className="text-5xl block mb-4">🏢</span>
+                      <h3 className="font-heading text-xl font-bold mb-2">No brands found</h3>
+                      <p className="text-muted-foreground">
+                        Try adjusting your filters or check back later for new brands!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {brands.map((brand, index) => (
+                        <BrandDiscoveryCard 
+                          key={brand.id} 
+                          brand={brand} 
+                          index={index}
+                          onClick={() => navigate(`/profile/brand/${brand.id}`)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </motion.div>
 
             {/* Media Gallery Preview */}
