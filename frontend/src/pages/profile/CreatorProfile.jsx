@@ -215,12 +215,12 @@ const CreatorProfile = () => {
                     <p className="font-bold text-primary">{formatPrice(creator?.rates?.storyPrice || 0)}</p>
                   </div>
                   <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Post</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.postPrice || 0)}</p>
+                    <p className="text-xs text-muted-foreground">Carousel</p>
+                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.carouselPrice || 0)}</p>
                   </div>
                   <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Bundle</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.bundlePrice || 0)}</p>
+                    <p className="text-xs text-muted-foreground">Post</p>
+                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.postPrice || 0)}</p>
                   </div>
                 </div>
               </div>
