@@ -77,8 +77,8 @@ const CreatorDashboard = () => {
     setActionLoading(campaignId);
     try {
       if (isRequest) {
-        // Handle collab request response (accept/decline)
-        const action = newStatus === 'accepted' ? 'accept' : 'decline';
+        // Handle collab request response (accept/reject)
+        const action = newStatus === 'accepted' ? 'accept' : 'reject';
         await requestsAPI.respond(campaignId, action);
         
         // Update local state
