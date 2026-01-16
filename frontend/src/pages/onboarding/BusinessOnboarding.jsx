@@ -213,8 +213,9 @@ const BusinessOnboarding = () => {
   const canProceed = () => {
     switch (step) {
       case 1: return formData.brandName && formData.category;
-      case 2: return true;
-      case 3: return true;
+      case 2: return instagramVerified;
+      case 3: return true; // Past collabs optional
+      case 4: return true;
       default: return false;
     }
   };
