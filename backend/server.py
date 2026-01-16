@@ -863,7 +863,8 @@ async def get_unlocked_brand(brand_id: str, current_user: dict = Depends(get_cur
         isOpenToBarter=brand.get("isOpenToBarter", False),
         pastCollabCount=brand.get("pastCollabCount", 0),
         pastCollaborations=past_collabs,
-        profilePhotoUrl=brand.get("profilePhotoUrl", "")
+        profilePhotoUrl=brand.get("profilePhotoUrl", ""),
+        pastCampaigns=brand.get("pastCampaigns", [])
     )
 
 @marketplace_router.post("/{target_type}/{target_id}/unlock")
