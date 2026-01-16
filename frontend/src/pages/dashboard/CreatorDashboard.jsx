@@ -256,18 +256,33 @@ const CreatorDashboard = () => {
             </motion.div>
           </div>
 
-          {/* Campaigns Section */}
+          {/* Main Content Section */}
           <div className="lg:col-span-2">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="font-heading text-2xl font-bold">Your Campaigns 🍊</h2>
-                <Badge variant="secondary" className="text-lg px-4 py-1">
-                  {proposedCampaigns.length} new
-                </Badge>
+              {/* Main Tabs - Campaigns vs Brands */}
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="mb-6 bg-muted/50 p-1 rounded-full w-full">
+                  <TabsTrigger value="campaigns" className="rounded-full data-[state=active]:bg-white flex-1">
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Campaigns ({campaigns.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="brands" className="rounded-full data-[state=active]:bg-white flex-1">
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Find Brands
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Campaigns Tab */}
+                <TabsContent value="campaigns">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="font-heading text-2xl font-bold">Your Campaigns 🍊</h2>
+                    <Badge variant="secondary" className="text-lg px-4 py-1">
+                      {proposedCampaigns.length} new
+                    </Badge>
               </div>
 
               {campaigns.length === 0 ? (
