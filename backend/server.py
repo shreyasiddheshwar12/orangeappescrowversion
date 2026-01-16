@@ -145,6 +145,8 @@ class RateInfo(BaseModel):
     reelPrice: float = 0
     storyPrice: float = 0
     carouselPrice: float = 0
+    postPrice: float = 0
+    bundlePrice: float = 0
 
 class CreatorProfileCreate(BaseModel):
     name: str
