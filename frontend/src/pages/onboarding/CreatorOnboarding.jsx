@@ -168,7 +168,7 @@ const CreatorOnboarding = () => {
       toast.success("Profile created – you look extra juicy now! 🍊");
       navigate('/dashboard/creator');
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to create profile");
+      toast.error(getErrorMessage(error, "Failed to create profile"));
     } finally {
       setLoading(false);
     }
