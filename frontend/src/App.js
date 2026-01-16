@@ -115,9 +115,31 @@ function AppRoutes() {
         } 
       />
       
-      {/* Public Profile Routes */}
-      <Route path="/profile/creator/:id" element={<CreatorProfile />} />
-      <Route path="/profile/business/:id" element={<BusinessProfile />} />
+      {/* Public Profile Routes - Now protected for marketplace access */}
+      <Route 
+        path="/profile/creator/:id" 
+        element={
+          <ProtectedRoute>
+            <CreatorProfile />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/profile/business/:id" 
+        element={
+          <ProtectedRoute>
+            <BusinessProfile />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/profile/brand/:id" 
+        element={
+          <ProtectedRoute>
+            <BusinessProfile />
+          </ProtectedRoute>
+        } 
+      />
       
       {/* Chat Route */}
       <Route 
