@@ -245,7 +245,8 @@ class BrandProfileFull(BaseModel):
     preferredNiches: List[str]
     isOpenToBarter: bool
     profilePhotoUrl: str
-    pastCampaigns: List[str]
+    pastCampaigns: List[str] = []
+    pastCollaborations: List[PastCollaboration] = []
     pastCollabCount: int = 0
     createdAt: str
     updatedAt: str
@@ -273,6 +274,9 @@ class BrandUnlocked(BaseModel):
     budgetRange: str
     preferredNiches: List[str]
     isOpenToBarter: bool
+    pastCollabCount: int = 0
+    pastCollaborations: List[PastCollaboration] = []
+    profilePhotoUrl: str = ""
     pastCampaigns: List[str]
     pastCollabCount: int
     profilePhotoUrl: str
