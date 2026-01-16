@@ -652,6 +652,7 @@ async def create_brand_profile(profile: BrandProfileCreate, current_user: dict =
         raise HTTPException(status_code=403, detail="Only businesses can create brand profiles")
     
     existing = await db.brand_profiles.find_one({"userId": current_user["id"]})
+    user_record = await db.users.find_one({"id": current_user["id"]})
     now = datetime.now(timezone.utc).isoformat()
     profile_id = existing["id"] if existing else str(uuid.uuid4())
     
@@ -661,6 +662,11 @@ async def create_brand_profile(profile: BrandProfileCreate, current_user: dict =
         "campaignStatus": "completed"
     })
     
+    # Use Instagram data from user record (set during verification) or existing profile
+    instagram_verified = user_record.get("instagramVerified", False) or (existing.get("instagramVerified", False) if existing else False)
+    instagram_user_id = user_record.get("instagramUserId") or (existing.get("instagramUserId") if existing else None)
+    instagram_username = user_record.get("instagramUsername") or (existing.get("instagramUsername") if existing else None)
+    
     profile_doc = {
         "id": profile_id,
         "userId": current_user["id"],
@@ -668,9 +674,9 @@ async def create_brand_profile(profile: BrandProfileCreate, current_user: dict =
         "industry": profile.industry or "",
         "bio": profile.bio or "",
         "location": profile.location or "",
-        "instagramUserId": existing.get("instagramUserId") if existing else None,
-        "instagramUsername": existing.get("instagramUsername") if existing else None,
-        "instagramVerified": existing.get("instagramVerified", False) if existing else False,
+        "instagramUserId": instagram_user_id,
+        "instagramUsername": instagram_username,
+        "instagramVerified": instagram_verified,
         "budgetRange": profile.budgetRange or "",
         "preferredNiches": profile.preferredNiches or [],
         "isOpenToBarter": profile.isOpenToBarter or False,
