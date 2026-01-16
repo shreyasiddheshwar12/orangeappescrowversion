@@ -601,4 +601,73 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
   );
 };
 
+// Brand Discovery Card Component
+const BrandDiscoveryCard = ({ brand, index, onClick }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.05 }}
+      className="card-orange p-5 cursor-pointer group hover:shadow-lg transition-shadow"
+      onClick={onClick}
+      data-testid={`brand-card-${brand.id}`}
+    >
+      <div className="flex items-start gap-4">
+        <div className="w-14 h-14 bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center shrink-0">
+          <Building2 className="w-7 h-7 text-primary" />
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-heading font-bold text-lg truncate">
+                {brand.isUnlocked ? brand.brandName : 'Brand Profile'}
+              </h3>
+              <p className="text-sm text-muted-foreground">{brand.industry}</p>
+            </div>
+            {!brand.isUnlocked && (
+              <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
+            )}
+          </div>
+          
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {brand.location && (
+              <Badge variant="secondary" className="text-xs">
+                <MapPin className="w-3 h-3 mr-1" />
+                {brand.location}
+              </Badge>
+            )}
+            {brand.isOpenToBarter && (
+              <Badge className="bg-accent text-accent-foreground text-xs">
+                🤝 Barter OK
+              </Badge>
+            )}
+          </div>
+          
+          <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <DollarSign className="w-4 h-4" />
+              {brand.budgetRange || 'Budget varies'}
+            </span>
+            <span className="flex items-center gap-1">
+              <Briefcase className="w-4 h-4" />
+              {brand.pastCollabsDisplay || '0 collabs'}
+            </span>
+          </div>
+          
+          {brand.preferredNiches?.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1">
+              {brand.preferredNiches.slice(0, 3).map(niche => (
+                <Badge key={niche} variant="outline" className="text-xs">
+                  {niche}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 export default CreatorDashboard;
