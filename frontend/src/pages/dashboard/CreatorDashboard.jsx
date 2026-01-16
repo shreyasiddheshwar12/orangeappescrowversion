@@ -3,13 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Instagram, MapPin, Users, Edit, LogOut, MessageSquare, Check, X, 
-  ExternalLink, DollarSign, Image as ImageIcon, Loader2, Lock, Unlock
+  ExternalLink, DollarSign, Image as ImageIcon, Loader2, Lock, Unlock,
+  Building2, Briefcase, Search, Filter
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { creatorAPI, campaignsAPI } from '../../lib/api';
+import { Input } from '../../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { creatorAPI, campaignsAPI, marketplaceAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
