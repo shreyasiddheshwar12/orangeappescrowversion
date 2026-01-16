@@ -1553,11 +1553,11 @@ async def seed_data():
     # Sample Creators
     creators = [
         {"name": "Priya Sharma", "location": "Mumbai", "niches": ["Fashion", "Lifestyle"], 
-         "followers": 520000, "engagement": 5.8, "rates": {"reelPrice": 15000, "storyPrice": 5000, "carouselPrice": 10000}},
+         "followers": 520000, "engagement": 5.8, "rates": {"reelPrice": 15000, "storyPrice": 5000, "carouselPrice": 10000, "postPrice": 8000, "bundlePrice": 25000}},
         {"name": "Arjun Kapoor", "location": "Delhi", "niches": ["Fitness", "Sports"],
-         "followers": 280000, "engagement": 4.2, "rates": {"reelPrice": 12000, "storyPrice": 4000, "carouselPrice": 8000}},
+         "followers": 280000, "engagement": 4.2, "rates": {"reelPrice": 12000, "storyPrice": 4000, "carouselPrice": 8000, "postPrice": 6000, "bundlePrice": 20000}},
         {"name": "Meera Patel", "location": "Bangalore", "niches": ["Beauty", "Skincare"],
-         "followers": 150000, "engagement": 6.5, "rates": {"reelPrice": 8000, "storyPrice": 3000, "carouselPrice": 6000}},
+         "followers": 150000, "engagement": 6.5, "rates": {"reelPrice": 8000, "storyPrice": 3000, "carouselPrice": 6000, "postPrice": 4000, "bundlePrice": 15000}},
     ]
     
     for i, c in enumerate(creators):
