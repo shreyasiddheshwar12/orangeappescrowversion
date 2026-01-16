@@ -764,16 +764,18 @@ async def discover_brands(
     discovery_list = []
     for b in brands:
         is_unlocked = await check_profile_unlocked(current_user["id"], b["id"])
+        collab_count = b.get("pastCollabCount", 0)
         
         discovery_list.append(BrandDiscovery(
             id=b["id"],
-            brandName=b.get("brandName", ""),
+            brandName=b.get("brandName", "") if is_unlocked else "Brand",
             industry=b.get("industry", ""),
             location=b.get("location", ""),
             budgetRange=b.get("budgetRange", ""),
             preferredNiches=b.get("preferredNiches", []),
             isOpenToBarter=b.get("isOpenToBarter", False),
-            pastCollabCount=b.get("pastCollabCount", 0),
+            pastCollabCount=collab_count,
+            pastCollabsDisplay=f"{collab_count} collab{'s' if collab_count != 1 else ''}",
             isUnlocked=is_unlocked
         ))
     
