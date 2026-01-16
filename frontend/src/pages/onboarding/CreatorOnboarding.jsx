@@ -13,7 +13,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { Switch } from '../../components/ui/switch';
 import { Badge } from '../../components/ui/badge';
 import { Progress } from '../../components/ui/progress';
-import { creatorAPI, uploadAPI } from '../../lib/api';
+import { creatorAPI, uploadAPI, instagramAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -29,6 +29,8 @@ const CreatorOnboarding = () => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [verifyingInstagram, setVerifyingInstagram] = useState(false);
+  const [instagramVerified, setInstagramVerified] = useState(false);
 
   // Form data
   const [formData, setFormData] = useState({
@@ -38,13 +40,15 @@ const CreatorOnboarding = () => {
     instagramHandle: '',
     instagramUrl: '',
     followersCount: '',
+    engagementRate: '',
     niches: [],
     isOpenToBarter: false,
     rates: {
       reelPrice: '',
       storyPrice: '',
       postPrice: '',
-      bundlePrice: ''
+      bundlePrice: '',
+      carouselPrice: ''
     },
     profilePhotoUrl: '',
     mediaGallery: []
