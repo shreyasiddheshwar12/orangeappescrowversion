@@ -334,8 +334,8 @@ const CreatorDashboard = () => {
                         <CampaignCard 
                           key={campaign.id}
                           campaign={campaign}
-                          onAccept={() => handleCampaignAction(campaign.id, 'accepted')}
-                          onDecline={() => handleCampaignAction(campaign.id, 'declined')}
+                          onAccept={() => handleCampaignAction(campaign.id, 'accepted', !!campaign.senderName)}
+                          onDecline={() => handleCampaignAction(campaign.id, 'declined', !!campaign.senderName)}
                           onChat={() => navigate(`/chat/${campaign.id}`)}
                           loading={actionLoading === campaign.id}
                           showActions
