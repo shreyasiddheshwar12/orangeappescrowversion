@@ -89,7 +89,7 @@ const CreatorDashboard = () => {
         toast.success("Marked as delivered! Waiting for brand approval 🎉");
       }
     } catch (error) {
-      toast.error("Failed to update campaign");
+      toast.error(getErrorMessage(error, "Failed to update campaign"));
     } finally {
       setActionLoading(null);
     }
