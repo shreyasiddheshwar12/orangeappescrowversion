@@ -3,6 +3,32 @@ import axios from 'axios';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API_URL = `${BACKEND_URL}/api`;
 
+// Utility function to extract error message string from API errors
+export const getErrorMessage = (error, defaultMessage = "Something went wrong") => {
+  const errorData = error.response?.data;
+  
+  if (!errorData) return error.message || defaultMessage;
+  if (typeof errorData === 'string') return errorData;
+  
+  // Handle FastAPI validation errors (array of {type, loc, msg, input, url})
+  if (errorData.detail) {
+    if (typeof errorData.detail === 'string') return errorData.detail;
+    if (Array.isArray(errorData.detail)) {
+      return errorData.detail.map(e => e.msg || String(e)).join(', ');
+    }
+    // If detail is an object, try to get msg
+    if (typeof errorData.detail === 'object' && errorData.detail.msg) {
+      return errorData.detail.msg;
+    }
+  }
+  
+  if (errorData.message) {
+    return typeof errorData.message === 'string' ? errorData.message : defaultMessage;
+  }
+  
+  return defaultMessage;
+};
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
