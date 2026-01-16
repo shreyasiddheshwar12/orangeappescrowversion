@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Query, status, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Query, status, Request, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -6,9 +6,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import re
+import random
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Literal
 import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
@@ -43,28 +44,30 @@ cloudinary.config(
     secure=True
 )
 
-# Razorpay Configuration
-RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
-RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
-RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
+# Razorpay Configuration (TEST MODE)
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', 'rzp_test_demo')
+RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', 'demo_secret')
+RAZORPAY_TEST_MODE = True  # Always use test mode for demo
 
 razorpay_client = None
-if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET and not RAZORPAY_KEY_ID.startswith('rzp_test_demo'):
     razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 # Pricing Configuration
 UNLOCK_PACK_PRICE = 20000  # ₹200 in paise
 UNLOCK_PACK_CREDITS = 5
 UNLOCK_CREDIT_VALIDITY_DAYS = 7
+REQUEST_EXPIRY_HOURS = 72
 
 # Create the main app
-app = FastAPI(title="Orange - Creator Marketplace API")
+app = FastAPI(title="Orange - Two-Way Creator Marketplace API")
 
 # Create routers
 api_router = APIRouter(prefix="/api")
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 creator_router = APIRouter(prefix="/creator", tags=["Creator"])
 business_router = APIRouter(prefix="/business", tags=["Business"])
+marketplace_router = APIRouter(prefix="/marketplace", tags=["Marketplace"])
 request_router = APIRouter(prefix="/requests", tags=["Requests"])
 message_router = APIRouter(prefix="/messages", tags=["Messages"])
 payment_router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -73,35 +76,40 @@ admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 security = HTTPBearer()
 
 # ============== BLOCKED KEYWORDS FOR CHAT ==============
-BLOCKED_KEYWORDS = [
-    'instagram', 'insta', 'ig', 'dm', 'whatsapp', 'whats app', 'wa',
-    'telegram', 'signal', 'snapchat', 'snap', 'twitter', 'x.com',
-    'facebook', 'fb', 'linkedin', 'youtube', 'yt',
-    '@', 'gmail', 'yahoo', 'hotmail', 'outlook',
-    r'\b\d{10}\b',  # Phone numbers
+BLOCKED_PATTERNS = [
+    r'\b(instagram|insta|ig)\b',
+    r'\b(whatsapp|whats\s*app|wa)\b',
+    r'\b(telegram|signal|snapchat|snap)\b',
+    r'\b(twitter|x\.com|facebook|fb|linkedin)\b',
+    r'@\w+',  # @usernames
+    r'\b(gmail|yahoo|hotmail|outlook)\b',
+    r'\b\d{10}\b',  # 10 digit phone numbers
     r'\b\d{5}[\s-]?\d{5}\b',  # Phone with space/dash
+    r'[\w\.-]+@[\w\.-]+\.\w+',  # Email pattern
 ]
 
-def check_message_for_bypass(text: str) -> tuple[bool, str]:
+def check_message_for_bypass(text: str) -> tuple:
     """Check if message contains blocked keywords. Returns (is_blocked, reason)"""
     text_lower = text.lower()
     
-    for keyword in BLOCKED_KEYWORDS:
-        if keyword.startswith(r'\b'):
-            # Regex pattern
-            if re.search(keyword, text_lower):
-                return True, "Phone numbers are not allowed before payment"
-        elif keyword in text_lower:
-            return True, f"External contact sharing is not allowed before payment"
+    for pattern in BLOCKED_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True, "External contact sharing is not allowed before payment"
     
     return False, ""
+
+def calculate_engagement_rate(followers: int, avg_likes: int, avg_comments: int) -> float:
+    """Calculate engagement rate: (avg_likes + avg_comments) / followers * 100"""
+    if followers <= 0:
+        return 0.0
+    return round(((avg_likes + avg_comments) / followers) * 100, 2)
 
 # ============== MODELS ==============
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
-    role: str  # "creator" or "business"
+    role: Literal["creator", "business"]
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -113,204 +121,239 @@ class UserResponse(BaseModel):
     role: str
     hasCompletedOnboarding: bool = False
     isAdmin: bool = False
+    instagramVerified: bool = False
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
 
-class MediaItem(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    type: str
-    url: str
-    thumbnailUrl: str
-    createdAt: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+# Instagram Verification (Simulated for Demo)
+class InstagramVerifyRequest(BaseModel):
+    instagramUsername: str
 
+class InstagramVerifyResponse(BaseModel):
+    success: bool
+    instagramUserId: str
+    instagramUsername: str
+    followersCount: int
+    engagementRate: float
+    message: str
+
+# Creator Profile
 class RateInfo(BaseModel):
-    reelPrice: Optional[float] = 0
-    storyPrice: Optional[float] = 0
-    postPrice: Optional[float] = 0
-    bundlePrice: Optional[float] = 0
+    reelPrice: float = 0
+    storyPrice: float = 0
+    carouselPrice: float = 0
 
 class CreatorProfileCreate(BaseModel):
     name: str
     bio: Optional[str] = ""
     location: Optional[str] = ""
-    instagramHandle: Optional[str] = ""
-    instagramUrl: Optional[str] = ""
-    followersCount: Optional[int] = 0
-    engagementRate: Optional[float] = 0
-    avgReelViews: Optional[int] = 0
     niches: Optional[List[str]] = []
     isOpenToBarter: Optional[bool] = False
     rates: Optional[RateInfo] = None
     profilePhotoUrl: Optional[str] = ""
-    mediaGallery: Optional[List[MediaItem]] = []
+    sampleContent: Optional[List[str]] = []  # URLs to sample content
 
-class CreatorProfileResponse(BaseModel):
+class CreatorProfileFull(BaseModel):
     id: str
     userId: str
     name: str
     bio: str
     location: str
-    profilePhotoUrl: str
-    instagramHandle: str
-    instagramUrl: str
+    instagramUserId: Optional[str] = None
+    instagramUsername: Optional[str] = None
+    instagramVerified: bool = False
     followersCount: int
     engagementRate: float
-    avgReelViews: int
     niches: List[str]
     isOpenToBarter: bool
     rates: RateInfo
-    mediaGallery: List[MediaItem]
+    profilePhotoUrl: str
+    sampleContent: List[str]
     createdAt: str
     updatedAt: str
 
-# Discovery Mode Response (Layer 1 - Free)
-class CreatorDiscoveryResponse(BaseModel):
+# Discovery Mode (Free) - No identity
+class CreatorDiscovery(BaseModel):
     id: str
-    displayName: str  # First name only
     niches: List[str]
-    city: str
+    location: str
     followersDisplay: str  # "40K+"
     engagementRateDisplay: str  # "~5.8%"
-    avgReelViewsDisplay: str  # "10k-20k"
-    rateRangeDisplay: str  # "₹5k-₹8k"
-    previewImages: List[str]  # Blurred/watermarked
+    rateRange: str  # "₹5k-₹15k"
     isOpenToBarter: bool
+    previewContent: List[str]  # Watermarked previews
     isUnlocked: bool = False
 
-# Unlocked Mode Response (Layer 2 - After ₹200)
-class CreatorUnlockedResponse(BaseModel):
+# Unlocked Mode (After Credit) - Context, no identity
+class CreatorUnlocked(BaseModel):
     id: str
-    name: str
-    bio: str
     niches: List[str]
-    city: str
+    location: str
     followersCount: int
     engagementRate: float
-    avgReelViews: int
     rates: RateInfo
-    mediaGallery: List[MediaItem]
     isOpenToBarter: bool
+    sampleContent: List[str]
+    bio: str
     profilePhotoUrl: str
-    # Still hidden: instagramHandle, instagramUrl
+    # Hidden: instagramUsername, instagramUserId
 
-# Full Access Response (Layer 3 - After Escrow)
-class CreatorFullAccessResponse(CreatorProfileResponse):
-    pass  # Everything visible
+# Full Access (After Payment) - Everything
+class CreatorFullAccess(CreatorProfileFull):
+    pass
 
-class BusinessProfileCreate(BaseModel):
+# Brand Profile
+class BrandProfileCreate(BaseModel):
     brandName: str
-    category: Optional[str] = ""
+    industry: Optional[str] = ""
     bio: Optional[str] = ""
     location: Optional[str] = ""
-    websiteUrl: Optional[str] = ""
-    instagramHandle: Optional[str] = ""
-    instagramUrl: Optional[str] = ""
+    budgetRange: Optional[str] = ""  # "₹10k-₹50k"
+    preferredNiches: Optional[List[str]] = []
+    isOpenToBarter: Optional[bool] = False
     profilePhotoUrl: Optional[str] = ""
-    mediaGallery: Optional[List[MediaItem]] = []
+    pastCampaigns: Optional[List[str]] = []  # URLs to past campaign content
 
-class BusinessProfileResponse(BaseModel):
+class BrandProfileFull(BaseModel):
     id: str
     userId: str
     brandName: str
-    category: str
+    industry: str
     bio: str
     location: str
-    websiteUrl: str
-    instagramHandle: str
-    instagramUrl: str
+    instagramUserId: Optional[str] = None
+    instagramUsername: Optional[str] = None
+    instagramVerified: bool = False
+    budgetRange: str
+    preferredNiches: List[str]
+    isOpenToBarter: bool
     profilePhotoUrl: str
-    mediaGallery: List[MediaItem]
+    pastCampaigns: List[str]
+    pastCollabCount: int = 0
     createdAt: str
     updatedAt: str
-    unlockCredits: int = 0
-    unlockCreditsExpiry: Optional[str] = None
 
+# Brand Discovery (For Creators to see)
+class BrandDiscovery(BaseModel):
+    id: str
+    brandName: str
+    industry: str
+    location: str
+    budgetRange: str
+    preferredNiches: List[str]
+    isOpenToBarter: bool
+    pastCollabCount: int
+    isUnlocked: bool = False
+
+# Brand Unlocked (After Credit)
+class BrandUnlocked(BaseModel):
+    id: str
+    brandName: str
+    industry: str
+    bio: str
+    location: str
+    budgetRange: str
+    preferredNiches: List[str]
+    isOpenToBarter: bool
+    pastCampaigns: List[str]
+    pastCollabCount: int
+    profilePhotoUrl: str
+    # Hidden: instagramUsername
+
+# Credits
 class UnlockCreditsResponse(BaseModel):
     totalCredits: int
+    lockedCredits: int
     usedCredits: int
     availableCredits: int
     expiryDate: Optional[str]
 
-class PaymentOrderResponse(BaseModel):
-    orderId: str
-    amount: int
-    currency: str
-    keyId: str
+# Two-Way Request
+class CollabRequestCreate(BaseModel):
+    receiverId: str  # Creator ID or Brand ID
+    receiverType: Literal["creator", "business"]
+    message: str
+    proposedBudget: Optional[float] = 0
+    deliverables: Optional[str] = ""
 
-class PaymentVerifyRequest(BaseModel):
-    razorpay_order_id: str
-    razorpay_payment_id: str
-    razorpay_signature: str
+class CollabRequestResponse(BaseModel):
+    id: str
+    senderId: str
+    senderType: str
+    senderName: str
+    receiverId: str
+    receiverType: str
+    receiverName: str
+    message: str
+    proposedBudget: float
+    deliverables: str
+    status: str  # pending, accepted, rejected, expired
+    creditState: str  # locked, consumed, refunded
+    identityUnlocked: bool
+    expiresAt: str
+    createdAt: str
+    updatedAt: str
 
+# Campaign (After acceptance)
 class CampaignCreate(BaseModel):
-    creatorId: str
+    requestId: str
     title: str
     brief: str
+    price: float
     deliverables: str
     timeline: str
-    price: float
     isBarter: bool = False
     barterDetails: Optional[str] = ""
 
 class CampaignResponse(BaseModel):
     id: str
+    requestId: str
     brandId: str
     creatorId: str
     title: str
     brief: str
+    price: float
     deliverables: str
     timeline: str
-    price: float
     isBarter: bool
     barterDetails: str
-    escrowStatus: str  # pending, paid, released, refunded
-    campaignStatus: str  # draft, proposed, accepted, in_progress, delivered, completed, cancelled
+    escrowStatus: str  # pending, paid_test, released
+    campaignStatus: str  # negotiating, confirmed, in_progress, delivered, completed
+    identityUnlocked: bool
+    creatorInstagram: Optional[str] = None
+    brandInstagram: Optional[str] = None
     createdAt: str
     updatedAt: str
-    creatorName: Optional[str] = ""
-    brandName: Optional[str] = ""
-    # Full access fields (only after escrow)
-    instagramHandle: Optional[str] = None
-    instagramUrl: Optional[str] = None
 
+# Messages
 class MessageCreate(BaseModel):
     text: str
 
 class MessageResponse(BaseModel):
     id: str
-    requestId: str
+    campaignId: str
     senderUserId: str
     senderName: str
     text: str
-    createdAt: str
     isBlocked: bool = False
     blockReason: Optional[str] = None
-
-class UploadResponse(BaseModel):
-    url: str
-    thumbnailUrl: str
-    type: str
-
-# Admin Models
-class AdminStats(BaseModel):
-    totalUsers: int
-    totalCreators: int
-    totalBrands: int
-    totalCampaigns: int
-    totalRevenue: float
-    bypassAttempts: int
-    activeUnlocks: int
-
-class FlaggedChat(BaseModel):
-    id: str
-    campaignId: str
-    senderName: str
-    message: str
-    reason: str
     createdAt: str
+
+# Payments
+class PaymentOrderResponse(BaseModel):
+    orderId: str
+    amount: int
+    currency: str
+    keyId: str
+    testMode: bool = True
+
+class PaymentVerifyRequest(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
 
 # ============== AUTH UTILITIES ==============
 
@@ -337,6 +380,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if user is None:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("isBanned"):
+            raise HTTPException(status_code=403, detail="Account banned")
         return user
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -349,7 +394,6 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)):
 # ============== HELPER FUNCTIONS ==============
 
 def format_followers(count: int) -> str:
-    """Format followers count for discovery mode"""
     if count >= 1000000:
         return f"{count // 1000000}M+"
     elif count >= 1000:
@@ -357,29 +401,11 @@ def format_followers(count: int) -> str:
     return f"{count}+"
 
 def format_engagement_rate(rate: float) -> str:
-    """Format engagement rate for discovery mode (rounded)"""
     return f"~{round(rate, 1)}%"
 
-def format_reel_views(views: int) -> str:
-    """Format avg reel views as range"""
-    if views >= 100000:
-        lower = (views // 100000) * 100
-        upper = lower + 100
-        return f"{lower}k-{upper}k"
-    elif views >= 10000:
-        lower = (views // 10000) * 10
-        upper = lower + 10
-        return f"{lower}k-{upper}k"
-    elif views >= 1000:
-        lower = (views // 1000)
-        upper = lower + 5
-        return f"{lower}k-{upper}k"
-    return f"{views}+"
-
 def format_rate_range(rates: dict) -> str:
-    """Format rate range for discovery mode"""
     prices = [v for v in [rates.get('reelPrice', 0), rates.get('storyPrice', 0), 
-                          rates.get('postPrice', 0)] if v > 0]
+                          rates.get('carouselPrice', 0)] if v > 0]
     if not prices:
         return "Ask for rates"
     min_price = min(prices) // 1000
@@ -388,48 +414,47 @@ def format_rate_range(rates: dict) -> str:
         return f"₹{min_price}k"
     return f"₹{min_price}k-₹{max_price}k"
 
-def get_display_name(full_name: str) -> str:
-    """Get first name for discovery mode"""
-    return full_name.split()[0] if full_name else "Creator"
-
-async def check_creator_unlocked(brand_id: str, creator_id: str) -> bool:
-    """Check if brand has unlocked this creator"""
-    unlock = await db.creator_unlocks.find_one({
-        "brandId": brand_id,
-        "creatorId": creator_id
-    })
-    return unlock is not None
-
-async def check_escrow_paid(brand_id: str, creator_id: str) -> bool:
-    """Check if brand has paid escrow for any campaign with this creator"""
-    campaign = await db.campaigns.find_one({
-        "brandId": brand_id,
-        "creatorId": creator_id,
-        "escrowStatus": {"$in": ["paid", "released"]}
-    })
-    return campaign is not None
-
-async def get_brand_unlock_credits(brand_id: str) -> dict:
-    """Get brand's unlock credits"""
-    credits = await db.unlock_credits.find_one({"brandId": brand_id}, {"_id": 0})
+async def get_user_credits(user_id: str) -> dict:
+    """Get user's unlock credits"""
+    credits = await db.credits.find_one({"userId": user_id}, {"_id": 0})
     if not credits:
-        return {"totalCredits": 0, "usedCredits": 0, "availableCredits": 0, "expiryDate": None}
+        return {"totalCredits": 0, "lockedCredits": 0, "usedCredits": 0, "availableCredits": 0, "expiryDate": None}
     
     # Check expiry
     if credits.get("expiryDate"):
         expiry = datetime.fromisoformat(credits["expiryDate"])
         if expiry < datetime.now(timezone.utc):
-            # Credits expired
-            return {"totalCredits": credits["totalCredits"], "usedCredits": credits["totalCredits"], 
-                    "availableCredits": 0, "expiryDate": credits["expiryDate"]}
+            return {"totalCredits": credits["totalCredits"], "lockedCredits": 0, 
+                    "usedCredits": credits["totalCredits"], "availableCredits": 0, "expiryDate": credits["expiryDate"]}
     
-    available = credits.get("totalCredits", 0) - credits.get("usedCredits", 0)
+    available = credits.get("totalCredits", 0) - credits.get("lockedCredits", 0) - credits.get("usedCredits", 0)
     return {
         "totalCredits": credits.get("totalCredits", 0),
+        "lockedCredits": credits.get("lockedCredits", 0),
         "usedCredits": credits.get("usedCredits", 0),
         "availableCredits": max(0, available),
         "expiryDate": credits.get("expiryDate")
     }
+
+async def check_profile_unlocked(user_id: str, target_id: str) -> bool:
+    """Check if user has unlocked a profile"""
+    unlock = await db.profile_unlocks.find_one({
+        "userId": user_id,
+        "targetId": target_id
+    })
+    return unlock is not None
+
+async def check_identity_unlocked(user_id: str, target_id: str) -> bool:
+    """Check if identity is unlocked (after payment)"""
+    # Check if there's a completed campaign with escrow paid
+    campaign = await db.campaigns.find_one({
+        "$or": [
+            {"brandId": user_id, "creatorId": target_id},
+            {"creatorId": user_id, "brandId": target_id}
+        ],
+        "identityUnlocked": True
+    })
+    return campaign is not None
 
 # ============== AUTH ROUTES ==============
 
@@ -439,9 +464,6 @@ async def signup(user_data: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    if user_data.role not in ["creator", "business"]:
-        raise HTTPException(status_code=400, detail="Role must be 'creator' or 'business'")
-    
     user_id = str(uuid.uuid4())
     user_doc = {
         "id": user_id,
@@ -449,7 +471,9 @@ async def signup(user_data: UserCreate):
         "passwordHash": get_password_hash(user_data.password),
         "role": user_data.role,
         "hasCompletedOnboarding": False,
+        "instagramVerified": False,
         "isAdmin": False,
+        "isBanned": False,
         "createdAt": datetime.now(timezone.utc).isoformat()
     }
     
@@ -458,17 +482,17 @@ async def signup(user_data: UserCreate):
     
     return TokenResponse(
         access_token=token,
-        user=UserResponse(id=user_id, email=user_data.email, role=user_data.role, hasCompletedOnboarding=False)
+        user=UserResponse(id=user_id, email=user_data.email, role=user_data.role)
     )
 
 @auth_router.post("/login", response_model=TokenResponse)
 async def login(user_data: UserLogin):
     user = await db.users.find_one({"email": user_data.email}, {"_id": 0})
-    if not user:
+    if not user or not verify_password(user_data.password, user["passwordHash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    if not verify_password(user_data.password, user["passwordHash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("isBanned"):
+        raise HTTPException(status_code=403, detail="Account banned")
     
     token = create_access_token({"sub": user["id"], "email": user["email"], "role": user["role"]})
     
@@ -479,7 +503,8 @@ async def login(user_data: UserLogin):
             email=user["email"], 
             role=user["role"],
             hasCompletedOnboarding=user.get("hasCompletedOnboarding", False),
-            isAdmin=user.get("isAdmin", False)
+            isAdmin=user.get("isAdmin", False),
+            instagramVerified=user.get("instagramVerified", False)
         )
     )
 
@@ -490,50 +515,74 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         email=current_user["email"],
         role=current_user["role"],
         hasCompletedOnboarding=current_user.get("hasCompletedOnboarding", False),
-        isAdmin=current_user.get("isAdmin", False)
+        isAdmin=current_user.get("isAdmin", False),
+        instagramVerified=current_user.get("instagramVerified", False)
     )
 
-@auth_router.post("/logout")
-async def logout():
-    return {"message": "Logged out successfully"}
+# ============== INSTAGRAM VERIFICATION (SIMULATED FOR DEMO) ==============
 
-# ============== UPLOAD ROUTES ==============
-
-@api_router.post("/upload", response_model=UploadResponse)
-async def upload_file(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    try:
-        contents = await file.read()
-        content_type = file.content_type or ""
-        resource_type = "video" if content_type.startswith("video") else "image"
-        
-        result = cloudinary.uploader.upload(
-            contents,
-            resource_type=resource_type,
-            folder="orange_marketplace",
-            public_id=f"{current_user['id']}_{uuid.uuid4()}"
-        )
-        
-        url = result.get("secure_url", result.get("url", ""))
-        
-        if resource_type == "video":
-            thumbnail_url = cloudinary.CloudinaryImage(result["public_id"]).build_url(
-                resource_type="video",
-                format="jpg",
-                transformation=[{"start_offset": "2", "width": 400, "height": 400, "crop": "fill"}]
-            )
-        else:
-            thumbnail_url = cloudinary.CloudinaryImage(result["public_id"]).build_url(
-                width=400, height=400, crop="fill"
-            )
-        
-        return UploadResponse(url=url, thumbnailUrl=thumbnail_url, type=resource_type)
-    except Exception as e:
-        logging.error(f"Upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+@api_router.post("/instagram/verify", response_model=InstagramVerifyResponse)
+async def verify_instagram(
+    data: InstagramVerifyRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Simulated Instagram OAuth verification for demo purposes.
+    In production, this would redirect to Instagram OAuth and fetch real data.
+    """
+    username = data.instagramUsername.replace("@", "").strip()
+    
+    if not username:
+        raise HTTPException(status_code=400, detail="Instagram username required")
+    
+    # Simulate Instagram API response
+    # In production: Use Instagram Graph API with OAuth
+    simulated_user_id = f"ig_{uuid.uuid4().hex[:12]}"
+    simulated_followers = random.randint(5000, 500000)
+    simulated_avg_likes = int(simulated_followers * random.uniform(0.02, 0.08))
+    simulated_avg_comments = int(simulated_avg_likes * random.uniform(0.05, 0.15))
+    
+    engagement_rate = calculate_engagement_rate(
+        simulated_followers, 
+        simulated_avg_likes, 
+        simulated_avg_comments
+    )
+    
+    # Store verification in user record
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {"$set": {
+            "instagramVerified": True,
+            "instagramUserId": simulated_user_id,
+            "instagramUsername": username
+        }}
+    )
+    
+    # Update profile with Instagram data
+    collection = "creator_profiles" if current_user["role"] == "creator" else "brand_profiles"
+    await db[collection].update_one(
+        {"userId": current_user["id"]},
+        {"$set": {
+            "instagramUserId": simulated_user_id,
+            "instagramUsername": username,
+            "instagramVerified": True,
+            "followersCount": simulated_followers,
+            "engagementRate": engagement_rate
+        }}
+    )
+    
+    return InstagramVerifyResponse(
+        success=True,
+        instagramUserId=simulated_user_id,
+        instagramUsername=username,
+        followersCount=simulated_followers,
+        engagementRate=engagement_rate,
+        message="Instagram verified successfully! (Demo Mode)"
+    )
 
 # ============== CREATOR ROUTES ==============
 
-@creator_router.post("/profile", response_model=CreatorProfileResponse)
+@creator_router.post("/profile", response_model=CreatorProfileFull)
 async def create_creator_profile(profile: CreatorProfileCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "creator":
         raise HTTPException(status_code=403, detail="Only creators can create creator profiles")
@@ -548,16 +597,16 @@ async def create_creator_profile(profile: CreatorProfileCreate, current_user: di
         "name": profile.name,
         "bio": profile.bio or "",
         "location": profile.location or "",
-        "profilePhotoUrl": profile.profilePhotoUrl or "",
-        "instagramHandle": profile.instagramHandle or "",
-        "instagramUrl": profile.instagramUrl or "",
-        "followersCount": profile.followersCount or 0,
-        "engagementRate": profile.engagementRate or 0,
-        "avgReelViews": profile.avgReelViews or 0,
+        "instagramUserId": existing.get("instagramUserId") if existing else None,
+        "instagramUsername": existing.get("instagramUsername") if existing else None,
+        "instagramVerified": existing.get("instagramVerified", False) if existing else False,
+        "followersCount": existing.get("followersCount", 0) if existing else 0,
+        "engagementRate": existing.get("engagementRate", 0) if existing else 0,
         "niches": profile.niches or [],
         "isOpenToBarter": profile.isOpenToBarter or False,
         "rates": (profile.rates.model_dump() if profile.rates else RateInfo().model_dump()),
-        "mediaGallery": [m.model_dump() for m in (profile.mediaGallery or [])],
+        "profilePhotoUrl": profile.profilePhotoUrl or "",
+        "sampleContent": profile.sampleContent or [],
         "createdAt": existing["createdAt"] if existing else now,
         "updatedAt": now
     }
@@ -569,97 +618,71 @@ async def create_creator_profile(profile: CreatorProfileCreate, current_user: di
     
     await db.users.update_one({"id": current_user["id"]}, {"$set": {"hasCompletedOnboarding": True}})
     
-    return CreatorProfileResponse(**profile_doc)
+    return CreatorProfileFull(**profile_doc)
 
-@creator_router.get("/profile", response_model=CreatorProfileResponse)
+@creator_router.get("/profile", response_model=CreatorProfileFull)
 async def get_my_creator_profile(current_user: dict = Depends(get_current_user)):
     profile = await db.creator_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    return CreatorProfileResponse(**profile)
-
-@creator_router.get("/requests", response_model=List[CampaignResponse])
-async def get_creator_campaigns(current_user: dict = Depends(get_current_user)):
-    profile = await db.creator_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
-    if not profile:
-        raise HTTPException(status_code=404, detail="Creator profile not found")
-    
-    campaigns = await db.campaigns.find({"creatorId": profile["id"]}, {"_id": 0}).to_list(100)
-    
-    for campaign in campaigns:
-        business = await db.business_profiles.find_one({"userId": campaign["brandId"]}, {"_id": 0})
-        if business:
-            campaign["brandName"] = business.get("brandName", "")
-        campaign["creatorName"] = profile.get("name", "")
-        
-        # Only show Instagram after escrow paid
-        if campaign.get("escrowStatus") in ["paid", "released"]:
-            campaign["instagramHandle"] = profile.get("instagramHandle")
-            campaign["instagramUrl"] = profile.get("instagramUrl")
-    
-    return [CampaignResponse(**c) for c in campaigns]
+    return CreatorProfileFull(**profile)
 
 # ============== BUSINESS ROUTES ==============
 
-@business_router.post("/profile", response_model=BusinessProfileResponse)
-async def create_business_profile(profile: BusinessProfileCreate, current_user: dict = Depends(get_current_user)):
+@business_router.post("/profile", response_model=BrandProfileFull)
+async def create_brand_profile(profile: BrandProfileCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can create business profiles")
+        raise HTTPException(status_code=403, detail="Only businesses can create brand profiles")
     
-    existing = await db.business_profiles.find_one({"userId": current_user["id"]})
+    existing = await db.brand_profiles.find_one({"userId": current_user["id"]})
     now = datetime.now(timezone.utc).isoformat()
     profile_id = existing["id"] if existing else str(uuid.uuid4())
+    
+    # Count past collabs
+    past_collab_count = await db.campaigns.count_documents({
+        "brandId": current_user["id"],
+        "campaignStatus": "completed"
+    })
     
     profile_doc = {
         "id": profile_id,
         "userId": current_user["id"],
         "brandName": profile.brandName,
-        "category": profile.category or "",
+        "industry": profile.industry or "",
         "bio": profile.bio or "",
         "location": profile.location or "",
-        "websiteUrl": profile.websiteUrl or "",
-        "instagramHandle": profile.instagramHandle or "",
-        "instagramUrl": profile.instagramUrl or "",
+        "instagramUserId": existing.get("instagramUserId") if existing else None,
+        "instagramUsername": existing.get("instagramUsername") if existing else None,
+        "instagramVerified": existing.get("instagramVerified", False) if existing else False,
+        "budgetRange": profile.budgetRange or "",
+        "preferredNiches": profile.preferredNiches or [],
+        "isOpenToBarter": profile.isOpenToBarter or False,
         "profilePhotoUrl": profile.profilePhotoUrl or "",
-        "mediaGallery": [m.model_dump() for m in (profile.mediaGallery or [])],
+        "pastCampaigns": profile.pastCampaigns or [],
+        "pastCollabCount": past_collab_count,
         "createdAt": existing["createdAt"] if existing else now,
         "updatedAt": now
     }
     
     if existing:
-        await db.business_profiles.update_one({"id": profile_id}, {"$set": profile_doc})
+        await db.brand_profiles.update_one({"id": profile_id}, {"$set": profile_doc})
     else:
-        await db.business_profiles.insert_one(profile_doc)
+        await db.brand_profiles.insert_one(profile_doc)
     
     await db.users.update_one({"id": current_user["id"]}, {"$set": {"hasCompletedOnboarding": True}})
     
-    # Get unlock credits
-    credits = await get_brand_unlock_credits(current_user["id"])
-    
-    return BusinessProfileResponse(**profile_doc, unlockCredits=credits["availableCredits"], 
-                                   unlockCreditsExpiry=credits["expiryDate"])
+    return BrandProfileFull(**profile_doc)
 
-@business_router.get("/profile", response_model=BusinessProfileResponse)
-async def get_my_business_profile(current_user: dict = Depends(get_current_user)):
-    profile = await db.business_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
+@business_router.get("/profile", response_model=BrandProfileFull)
+async def get_my_brand_profile(current_user: dict = Depends(get_current_user)):
+    profile = await db.brand_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    
-    credits = await get_brand_unlock_credits(current_user["id"])
-    return BusinessProfileResponse(**profile, unlockCredits=credits["availableCredits"],
-                                   unlockCreditsExpiry=credits["expiryDate"])
+    return BrandProfileFull(**profile)
 
-@business_router.get("/unlock-credits", response_model=UnlockCreditsResponse)
-async def get_unlock_credits(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses have unlock credits")
-    
-    credits = await get_brand_unlock_credits(current_user["id"])
-    return UnlockCreditsResponse(**credits)
+# ============== TWO-WAY MARKETPLACE ==============
 
-# ============== MARKETPLACE ROUTES (GATED) ==============
-
-@api_router.get("/creators/discover", response_model=List[CreatorDiscoveryResponse])
+@marketplace_router.get("/creators", response_model=List[CreatorDiscovery])
 async def discover_creators(
     niche: Optional[str] = Query(None),
     minFollowers: Optional[int] = Query(None),
@@ -667,400 +690,414 @@ async def discover_creators(
     location: Optional[str] = Query(None),
     openToBarter: Optional[bool] = Query(None),
     limit: int = Query(50, le=100),
-    skip: int = Query(0),
     current_user: dict = Depends(get_current_user)
 ):
-    """Layer 1: Discovery Mode - Free for all brands"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can browse creators")
+    """Brands discover creators (Layer 1 - Free)"""
+    query = {"instagramVerified": True}  # Only show verified profiles
     
-    query = {}
     if niche and niche != 'All':
         query["niches"] = {"$in": [niche]}
-    if minFollowers is not None:
+    if minFollowers:
         query["followersCount"] = {"$gte": minFollowers}
-    if maxFollowers is not None:
-        if "followersCount" in query:
-            query["followersCount"]["$lte"] = maxFollowers
-        else:
-            query["followersCount"] = {"$lte": maxFollowers}
+    if maxFollowers:
+        query.setdefault("followersCount", {})["$lte"] = maxFollowers
     if location:
         query["location"] = {"$regex": location, "$options": "i"}
-    if openToBarter is not None:
-        query["isOpenToBarter"] = openToBarter
+    if openToBarter:
+        query["isOpenToBarter"] = True
     
-    creators = await db.creator_profiles.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    creators = await db.creator_profiles.find(query, {"_id": 0}).limit(limit).to_list(limit)
     
     discovery_list = []
-    for creator in creators:
-        # Check if unlocked
-        is_unlocked = await check_creator_unlocked(current_user["id"], creator["id"])
+    for c in creators:
+        is_unlocked = await check_profile_unlocked(current_user["id"], c["id"])
         
-        # Get preview images (first 3, would be watermarked in production)
-        preview_images = [m.get("thumbnailUrl", m.get("url", "")) 
-                         for m in creator.get("mediaGallery", [])[:3]]
-        
-        discovery = CreatorDiscoveryResponse(
-            id=creator["id"],
-            displayName=get_display_name(creator.get("name", "Creator")),
-            niches=creator.get("niches", []),
-            city=creator.get("location", "").split(",")[0] if creator.get("location") else "",
-            followersDisplay=format_followers(creator.get("followersCount", 0)),
-            engagementRateDisplay=format_engagement_rate(creator.get("engagementRate", 0)),
-            avgReelViewsDisplay=format_reel_views(creator.get("avgReelViews", 0)),
-            rateRangeDisplay=format_rate_range(creator.get("rates", {})),
-            previewImages=preview_images,
-            isOpenToBarter=creator.get("isOpenToBarter", False),
+        discovery_list.append(CreatorDiscovery(
+            id=c["id"],
+            niches=c.get("niches", []),
+            location=c.get("location", ""),
+            followersDisplay=format_followers(c.get("followersCount", 0)),
+            engagementRateDisplay=format_engagement_rate(c.get("engagementRate", 0)),
+            rateRange=format_rate_range(c.get("rates", {})),
+            isOpenToBarter=c.get("isOpenToBarter", False),
+            previewContent=c.get("sampleContent", [])[:3],
             isUnlocked=is_unlocked
-        )
-        discovery_list.append(discovery)
+        ))
     
     return discovery_list
 
-@api_router.get("/creators/{creator_id}/unlocked", response_model=CreatorUnlockedResponse)
-async def get_unlocked_creator(creator_id: str, current_user: dict = Depends(get_current_user)):
-    """Layer 2: Unlocked Mode - After using unlock credit"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can view creators")
+@marketplace_router.get("/brands", response_model=List[BrandDiscovery])
+async def discover_brands(
+    industry: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    openToBarter: Optional[bool] = Query(None),
+    limit: int = Query(50, le=100),
+    current_user: dict = Depends(get_current_user)
+):
+    """Creators discover brands (Layer 1 - Free)"""
+    query = {"instagramVerified": True}
     
-    # Check if unlocked
-    is_unlocked = await check_creator_unlocked(current_user["id"], creator_id)
+    if industry:
+        query["industry"] = {"$regex": industry, "$options": "i"}
+    if location:
+        query["location"] = {"$regex": location, "$options": "i"}
+    if openToBarter:
+        query["isOpenToBarter"] = True
+    
+    brands = await db.brand_profiles.find(query, {"_id": 0}).limit(limit).to_list(limit)
+    
+    discovery_list = []
+    for b in brands:
+        is_unlocked = await check_profile_unlocked(current_user["id"], b["id"])
+        
+        discovery_list.append(BrandDiscovery(
+            id=b["id"],
+            brandName=b.get("brandName", ""),
+            industry=b.get("industry", ""),
+            location=b.get("location", ""),
+            budgetRange=b.get("budgetRange", ""),
+            preferredNiches=b.get("preferredNiches", []),
+            isOpenToBarter=b.get("isOpenToBarter", False),
+            pastCollabCount=b.get("pastCollabCount", 0),
+            isUnlocked=is_unlocked
+        ))
+    
+    return discovery_list
+
+@marketplace_router.get("/creators/{creator_id}/unlocked", response_model=CreatorUnlocked)
+async def get_unlocked_creator(creator_id: str, current_user: dict = Depends(get_current_user)):
+    """Get creator context after spending credit (Layer 2)"""
+    is_unlocked = await check_profile_unlocked(current_user["id"], creator_id)
     if not is_unlocked:
-        raise HTTPException(status_code=403, detail="You need to unlock this creator first")
+        raise HTTPException(status_code=403, detail="Spend a credit to unlock this profile")
     
     creator = await db.creator_profiles.find_one({"id": creator_id}, {"_id": 0})
     if not creator:
         raise HTTPException(status_code=404, detail="Creator not found")
     
-    return CreatorUnlockedResponse(
+    return CreatorUnlocked(
         id=creator["id"],
-        name=creator.get("name", ""),
-        bio=creator.get("bio", ""),
         niches=creator.get("niches", []),
-        city=creator.get("location", "").split(",")[0] if creator.get("location") else "",
+        location=creator.get("location", ""),
         followersCount=creator.get("followersCount", 0),
         engagementRate=creator.get("engagementRate", 0),
-        avgReelViews=creator.get("avgReelViews", 0),
         rates=RateInfo(**creator.get("rates", {})),
-        mediaGallery=[MediaItem(**m) for m in creator.get("mediaGallery", [])],
         isOpenToBarter=creator.get("isOpenToBarter", False),
+        sampleContent=creator.get("sampleContent", []),
+        bio=creator.get("bio", ""),
         profilePhotoUrl=creator.get("profilePhotoUrl", "")
     )
 
-@api_router.get("/creators/{creator_id}/full", response_model=CreatorFullAccessResponse)
-async def get_full_creator(creator_id: str, current_user: dict = Depends(get_current_user)):
-    """Layer 3: Full Access - After escrow payment"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can view creators")
+@marketplace_router.get("/brands/{brand_id}/unlocked", response_model=BrandUnlocked)
+async def get_unlocked_brand(brand_id: str, current_user: dict = Depends(get_current_user)):
+    """Get brand context after spending credit (Layer 2)"""
+    is_unlocked = await check_profile_unlocked(current_user["id"], brand_id)
+    if not is_unlocked:
+        raise HTTPException(status_code=403, detail="Spend a credit to unlock this profile")
     
-    # Check if escrow paid
-    has_escrow = await check_escrow_paid(current_user["id"], creator_id)
-    if not has_escrow:
-        raise HTTPException(status_code=403, detail="Full access requires campaign payment")
+    brand = await db.brand_profiles.find_one({"id": brand_id}, {"_id": 0})
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
     
-    creator = await db.creator_profiles.find_one({"id": creator_id}, {"_id": 0})
-    if not creator:
-        raise HTTPException(status_code=404, detail="Creator not found")
-    
-    return CreatorFullAccessResponse(**creator)
+    return BrandUnlocked(
+        id=brand["id"],
+        brandName=brand.get("brandName", ""),
+        industry=brand.get("industry", ""),
+        bio=brand.get("bio", ""),
+        location=brand.get("location", ""),
+        budgetRange=brand.get("budgetRange", ""),
+        preferredNiches=brand.get("preferredNiches", []),
+        isOpenToBarter=brand.get("isOpenToBarter", False),
+        pastCampaigns=brand.get("pastCampaigns", []),
+        pastCollabCount=brand.get("pastCollabCount", 0),
+        profilePhotoUrl=brand.get("profilePhotoUrl", "")
+    )
 
-@api_router.post("/creators/{creator_id}/unlock")
-async def unlock_creator(creator_id: str, current_user: dict = Depends(get_current_user)):
-    """Use an unlock credit to unlock a creator"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can unlock creators")
-    
+@marketplace_router.post("/{target_type}/{target_id}/unlock")
+async def unlock_profile(
+    target_type: Literal["creator", "brand"],
+    target_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Spend 1 credit to unlock a profile (context only, not identity)"""
     # Check if already unlocked
-    is_unlocked = await check_creator_unlocked(current_user["id"], creator_id)
+    is_unlocked = await check_profile_unlocked(current_user["id"], target_id)
     if is_unlocked:
-        return {"message": "Creator already unlocked", "success": True}
+        return {"message": "Profile already unlocked", "success": True}
     
     # Check credits
-    credits = await get_brand_unlock_credits(current_user["id"])
+    credits = await get_user_credits(current_user["id"])
     if credits["availableCredits"] <= 0:
-        raise HTTPException(status_code=402, detail="No unlock credits available. Please purchase an unlock pack.")
+        raise HTTPException(status_code=402, detail="No credits available. Purchase an unlock pack.")
     
-    # Verify creator exists
-    creator = await db.creator_profiles.find_one({"id": creator_id}, {"_id": 0})
-    if not creator:
-        raise HTTPException(status_code=404, detail="Creator not found")
+    # Verify target exists
+    collection = "creator_profiles" if target_type == "creator" else "brand_profiles"
+    target = await db[collection].find_one({"id": target_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail=f"{target_type.title()} not found")
     
     # Use credit
-    await db.unlock_credits.update_one(
-        {"brandId": current_user["id"]},
+    await db.credits.update_one(
+        {"userId": current_user["id"]},
         {"$inc": {"usedCredits": 1}}
     )
     
     # Record unlock
-    await db.creator_unlocks.insert_one({
+    await db.profile_unlocks.insert_one({
         "id": str(uuid.uuid4()),
-        "brandId": current_user["id"],
-        "creatorId": creator_id,
+        "userId": current_user["id"],
+        "targetId": target_id,
+        "targetType": target_type,
         "unlockedAt": datetime.now(timezone.utc).isoformat()
     })
     
-    return {"message": "Creator unlocked successfully!", "success": True}
+    return {"message": "Profile unlocked! You can now see full context.", "success": True}
 
-# ============== PAYMENT ROUTES ==============
+# ============== TWO-WAY REQUEST SYSTEM ==============
 
-@payment_router.post("/create-unlock-order", response_model=PaymentOrderResponse)
-async def create_unlock_order(current_user: dict = Depends(get_current_user)):
-    """Create Razorpay order for unlock pack"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can purchase unlock packs")
+@request_router.post("/", response_model=CollabRequestResponse, status_code=201)
+async def create_collab_request(
+    req_data: CollabRequestCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Send a collab request (works both ways: brand→creator or creator→brand)"""
+    sender_type = current_user["role"]
     
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Payment service not configured")
+    # Validate receiver
+    if req_data.receiverType == sender_type:
+        raise HTTPException(status_code=400, detail="Cannot send request to same role type")
     
-    try:
-        order = razorpay_client.order.create({
-            "amount": UNLOCK_PACK_PRICE,
-            "currency": "INR",
-            "payment_capture": 1,
-            "notes": {
-                "userId": current_user["id"],
-                "type": "unlock_pack"
-            }
-        })
-        
-        # Store order
-        await db.payments.insert_one({
+    collection = "creator_profiles" if req_data.receiverType == "creator" else "brand_profiles"
+    receiver = await db[collection].find_one({"id": req_data.receiverId}, {"_id": 0})
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver not found")
+    
+    # Check credits
+    credits = await get_user_credits(current_user["id"])
+    if credits["availableCredits"] <= 0:
+        raise HTTPException(status_code=402, detail="No credits available")
+    
+    # Get sender profile
+    sender_collection = "creator_profiles" if sender_type == "creator" else "brand_profiles"
+    sender_profile = await db[sender_collection].find_one({"userId": current_user["id"]}, {"_id": 0})
+    if not sender_profile:
+        raise HTTPException(status_code=404, detail="Complete your profile first")
+    
+    sender_name = sender_profile.get("name" if sender_type == "creator" else "brandName", "Unknown")
+    receiver_name = receiver.get("name" if req_data.receiverType == "creator" else "brandName", "Unknown")
+    
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=REQUEST_EXPIRY_HOURS)
+    
+    request_doc = {
+        "id": str(uuid.uuid4()),
+        "senderId": sender_profile["id"],
+        "senderUserId": current_user["id"],
+        "senderType": sender_type,
+        "senderName": sender_name,
+        "receiverId": req_data.receiverId,
+        "receiverUserId": receiver["userId"],
+        "receiverType": req_data.receiverType,
+        "receiverName": receiver_name,
+        "message": req_data.message,
+        "proposedBudget": req_data.proposedBudget or 0,
+        "deliverables": req_data.deliverables or "",
+        "status": "pending",
+        "creditState": "locked",  # Credit locked until response
+        "identityUnlocked": False,
+        "expiresAt": expires_at.isoformat(),
+        "createdAt": now.isoformat(),
+        "updatedAt": now.isoformat()
+    }
+    
+    # Lock 1 credit
+    await db.credits.update_one(
+        {"userId": current_user["id"]},
+        {"$inc": {"lockedCredits": 1}}
+    )
+    
+    await db.collab_requests.insert_one(request_doc)
+    
+    # Auto-unlock profile for communication
+    await db.profile_unlocks.update_one(
+        {"userId": current_user["id"], "targetId": req_data.receiverId},
+        {"$setOnInsert": {
             "id": str(uuid.uuid4()),
-            "orderId": order["id"],
             "userId": current_user["id"],
-            "type": "unlock_pack",
-            "amount": UNLOCK_PACK_PRICE,
-            "status": "created",
-            "createdAt": datetime.now(timezone.utc).isoformat()
-        })
-        
-        return PaymentOrderResponse(
-            orderId=order["id"],
-            amount=UNLOCK_PACK_PRICE,
-            currency="INR",
-            keyId=RAZORPAY_KEY_ID
-        )
-    except Exception as e:
-        logging.error(f"Razorpay order creation failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create payment order")
-
-@payment_router.post("/verify-unlock-payment")
-async def verify_unlock_payment(payment: PaymentVerifyRequest, current_user: dict = Depends(get_current_user)):
-    """Verify Razorpay payment and add unlock credits"""
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Payment service not configured")
+            "targetId": req_data.receiverId,
+            "targetType": req_data.receiverType,
+            "unlockedAt": now.isoformat()
+        }},
+        upsert=True
+    )
     
-    try:
-        # Verify signature
-        params = {
-            'razorpay_order_id': payment.razorpay_order_id,
-            'razorpay_payment_id': payment.razorpay_payment_id,
-            'razorpay_signature': payment.razorpay_signature
-        }
-        razorpay_client.utility.verify_payment_signature(params)
+    return CollabRequestResponse(**request_doc)
+
+@request_router.get("/incoming", response_model=List[CollabRequestResponse])
+async def get_incoming_requests(current_user: dict = Depends(get_current_user)):
+    """Get requests received by current user"""
+    requests = await db.collab_requests.find(
+        {"receiverUserId": current_user["id"]},
+        {"_id": 0}
+    ).sort("createdAt", -1).to_list(100)
+    
+    # Check and expire old requests
+    now = datetime.now(timezone.utc)
+    for req in requests:
+        if req["status"] == "pending" and datetime.fromisoformat(req["expiresAt"]) < now:
+            await expire_request(req["id"])
+            req["status"] = "expired"
+            req["creditState"] = "refunded"
+    
+    return [CollabRequestResponse(**r) for r in requests]
+
+@request_router.get("/outgoing", response_model=List[CollabRequestResponse])
+async def get_outgoing_requests(current_user: dict = Depends(get_current_user)):
+    """Get requests sent by current user"""
+    requests = await db.collab_requests.find(
+        {"senderUserId": current_user["id"]},
+        {"_id": 0}
+    ).sort("createdAt", -1).to_list(100)
+    
+    return [CollabRequestResponse(**r) for r in requests]
+
+async def expire_request(request_id: str):
+    """Auto-expire request and refund credit"""
+    req = await db.collab_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req or req["status"] != "pending":
+        return
+    
+    # Refund credit
+    await db.credits.update_one(
+        {"userId": req["senderUserId"]},
+        {"$inc": {"lockedCredits": -1}}  # Unlock the credit
+    )
+    
+    # Update request
+    await db.collab_requests.update_one(
+        {"id": request_id},
+        {"$set": {
+            "status": "expired",
+            "creditState": "refunded",
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+
+@request_router.patch("/{request_id}/respond")
+async def respond_to_request(
+    request_id: str,
+    action: Literal["accept", "reject"] = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """Accept or reject a collab request"""
+    req = await db.collab_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    if req["receiverUserId"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Request already processed")
+    
+    now = datetime.now(timezone.utc)
+    
+    if action == "reject":
+        # REFUND credit to sender
+        await db.credits.update_one(
+            {"userId": req["senderUserId"]},
+            {"$inc": {"lockedCredits": -1}}  # Unlock credit (refund)
+        )
         
-        # Update payment status
-        await db.payments.update_one(
-            {"orderId": payment.razorpay_order_id},
+        await db.collab_requests.update_one(
+            {"id": request_id},
             {"$set": {
-                "paymentId": payment.razorpay_payment_id,
-                "status": "paid",
-                "paidAt": datetime.now(timezone.utc).isoformat()
+                "status": "rejected",
+                "creditState": "refunded",
+                "updatedAt": now.isoformat()
             }}
         )
         
-        # Add unlock credits
-        expiry = datetime.now(timezone.utc) + timedelta(days=UNLOCK_CREDIT_VALIDITY_DAYS)
+        return {"message": "Request rejected. Credit refunded to sender.", "success": True}
+    
+    else:  # accept
+        # CONSUME credit (move from locked to used)
+        await db.credits.update_one(
+            {"userId": req["senderUserId"]},
+            {"$inc": {"lockedCredits": -1, "usedCredits": 1}}
+        )
         
-        existing_credits = await db.unlock_credits.find_one({"brandId": current_user["id"]})
-        if existing_credits:
-            # Add to existing credits
-            await db.unlock_credits.update_one(
-                {"brandId": current_user["id"]},
-                {
-                    "$inc": {"totalCredits": UNLOCK_PACK_CREDITS},
-                    "$set": {"expiryDate": expiry.isoformat()}
-                }
-            )
-        else:
-            # Create new credits
-            await db.unlock_credits.insert_one({
-                "brandId": current_user["id"],
-                "totalCredits": UNLOCK_PACK_CREDITS,
-                "usedCredits": 0,
-                "expiryDate": expiry.isoformat(),
-                "createdAt": datetime.now(timezone.utc).isoformat()
-            })
-        
-        return {"message": f"Payment successful! {UNLOCK_PACK_CREDITS} unlock credits added.", "success": True}
-    
-    except razorpay.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Payment verification failed")
-    except Exception as e:
-        logging.error(f"Payment verification error: {e}")
-        raise HTTPException(status_code=500, detail="Payment verification failed")
-
-@payment_router.post("/create-escrow-order")
-async def create_escrow_order(campaign_id: str, current_user: dict = Depends(get_current_user)):
-    """Create Razorpay order for campaign escrow payment"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can make escrow payments")
-    
-    campaign = await db.campaigns.find_one({"id": campaign_id, "brandId": current_user["id"]}, {"_id": 0})
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    if campaign.get("escrowStatus") == "paid":
-        raise HTTPException(status_code=400, detail="Escrow already paid for this campaign")
-    
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Payment service not configured")
-    
-    amount_paise = int(campaign["price"] * 100)
-    
-    try:
-        order = razorpay_client.order.create({
-            "amount": amount_paise,
-            "currency": "INR",
-            "payment_capture": 1,
-            "notes": {
+        # Auto-unlock sender's profile for receiver
+        await db.profile_unlocks.update_one(
+            {"userId": current_user["id"], "targetId": req["senderId"]},
+            {"$setOnInsert": {
+                "id": str(uuid.uuid4()),
                 "userId": current_user["id"],
-                "campaignId": campaign_id,
-                "type": "escrow"
-            }
-        })
-        
-        await db.payments.insert_one({
-            "id": str(uuid.uuid4()),
-            "orderId": order["id"],
-            "userId": current_user["id"],
-            "campaignId": campaign_id,
-            "type": "escrow",
-            "amount": amount_paise,
-            "status": "created",
-            "createdAt": datetime.now(timezone.utc).isoformat()
-        })
-        
-        return PaymentOrderResponse(
-            orderId=order["id"],
-            amount=amount_paise,
-            currency="INR",
-            keyId=RAZORPAY_KEY_ID
+                "targetId": req["senderId"],
+                "targetType": req["senderType"],
+                "unlockedAt": now.isoformat()
+            }},
+            upsert=True
         )
-    except Exception as e:
-        logging.error(f"Escrow order creation failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create payment order")
-
-@payment_router.post("/verify-escrow-payment")
-async def verify_escrow_payment(payment: PaymentVerifyRequest, campaign_id: str, current_user: dict = Depends(get_current_user)):
-    """Verify escrow payment and update campaign status"""
-    if not razorpay_client:
-        raise HTTPException(status_code=500, detail="Payment service not configured")
-    
-    try:
-        params = {
-            'razorpay_order_id': payment.razorpay_order_id,
-            'razorpay_payment_id': payment.razorpay_payment_id,
-            'razorpay_signature': payment.razorpay_signature
-        }
-        razorpay_client.utility.verify_payment_signature(params)
         
-        # Update payment
-        await db.payments.update_one(
-            {"orderId": payment.razorpay_order_id},
+        await db.collab_requests.update_one(
+            {"id": request_id},
             {"$set": {
-                "paymentId": payment.razorpay_payment_id,
-                "status": "paid",
-                "paidAt": datetime.now(timezone.utc).isoformat()
+                "status": "accepted",
+                "creditState": "consumed",
+                "updatedAt": now.isoformat()
             }}
         )
         
-        # Update campaign escrow status
-        await db.campaigns.update_one(
-            {"id": campaign_id},
-            {"$set": {
-                "escrowStatus": "paid",
-                "campaignStatus": "in_progress",
-                "escrowPaidAt": datetime.now(timezone.utc).isoformat()
-            }}
-        )
-        
-        return {"message": "Escrow payment successful! Full access unlocked.", "success": True}
-    
-    except razorpay.errors.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Payment verification failed")
-    except Exception as e:
-        logging.error(f"Escrow verification error: {e}")
-        raise HTTPException(status_code=500, detail="Payment verification failed")
+        return {"message": "Request accepted! Negotiation can begin.", "success": True}
 
-# ============== CAMPAIGN ROUTES ==============
+# ============== CAMPAIGNS (After Request Acceptance) ==============
 
-@api_router.post("/campaigns", response_model=CampaignResponse, status_code=status.HTTP_201_CREATED)
-async def create_campaign(campaign_data: CampaignCreate, current_user: dict = Depends(get_current_user)):
-    """Create a new campaign (proposal)"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can create campaigns")
+@api_router.post("/campaigns", response_model=CampaignResponse, status_code=201)
+async def create_campaign(
+    campaign_data: CampaignCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a campaign from an accepted request"""
+    req = await db.collab_requests.find_one({"id": campaign_data.requestId}, {"_id": 0})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
     
-    # Check if creator is unlocked
-    is_unlocked = await check_creator_unlocked(current_user["id"], campaign_data.creatorId)
-    if not is_unlocked:
-        raise HTTPException(status_code=403, detail="You need to unlock this creator first")
+    if req["status"] != "accepted":
+        raise HTTPException(status_code=400, detail="Request must be accepted first")
     
-    creator = await db.creator_profiles.find_one({"id": campaign_data.creatorId}, {"_id": 0})
-    if not creator:
-        raise HTTPException(status_code=404, detail="Creator not found")
-    
-    business = await db.business_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
+    # Determine brand and creator
+    if req["senderType"] == "business":
+        brand_id = req["senderUserId"]
+        creator_id = req["receiverUserId"]
+    else:
+        brand_id = req["receiverUserId"]
+        creator_id = req["senderUserId"]
     
     now = datetime.now(timezone.utc).isoformat()
-    campaign_id = str(uuid.uuid4())
     
     campaign_doc = {
-        "id": campaign_id,
-        "brandId": current_user["id"],
-        "creatorId": campaign_data.creatorId,
+        "id": str(uuid.uuid4()),
+        "requestId": campaign_data.requestId,
+        "brandId": brand_id,
+        "creatorId": creator_id,
         "title": campaign_data.title,
         "brief": campaign_data.brief,
+        "price": campaign_data.price,
         "deliverables": campaign_data.deliverables,
         "timeline": campaign_data.timeline,
-        "price": campaign_data.price,
         "isBarter": campaign_data.isBarter,
         "barterDetails": campaign_data.barterDetails or "",
         "escrowStatus": "pending",
-        "campaignStatus": "proposed",
+        "campaignStatus": "negotiating",
+        "identityUnlocked": False,
         "createdAt": now,
         "updatedAt": now
     }
     
     await db.campaigns.insert_one(campaign_doc)
     
-    return CampaignResponse(
-        **campaign_doc,
-        creatorName=creator.get("name", ""),
-        brandName=business.get("brandName", "") if business else ""
-    )
-
-@api_router.get("/campaigns/sent", response_model=List[CampaignResponse])
-async def get_sent_campaigns(current_user: dict = Depends(get_current_user)):
-    """Get campaigns sent by brand"""
-    if current_user["role"] != "business":
-        raise HTTPException(status_code=403, detail="Only businesses can view sent campaigns")
-    
-    campaigns = await db.campaigns.find({"brandId": current_user["id"]}, {"_id": 0}).to_list(100)
-    
-    for campaign in campaigns:
-        creator = await db.creator_profiles.find_one({"id": campaign["creatorId"]}, {"_id": 0})
-        business = await db.business_profiles.find_one({"userId": campaign["brandId"]}, {"_id": 0})
-        if creator:
-            campaign["creatorName"] = creator.get("name", "")
-            # Only show Instagram after escrow paid
-            if campaign.get("escrowStatus") in ["paid", "released"]:
-                campaign["instagramHandle"] = creator.get("instagramHandle")
-                campaign["instagramUrl"] = creator.get("instagramUrl")
-        if business:
-            campaign["brandName"] = business.get("brandName", "")
-    
-    return [CampaignResponse(**c) for c in campaigns]
+    return CampaignResponse(**campaign_doc)
 
 @api_router.get("/campaigns/{campaign_id}", response_model=CampaignResponse)
 async def get_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
@@ -1069,90 +1106,318 @@ async def get_campaign(campaign_id: str, current_user: dict = Depends(get_curren
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    # Check access
-    creator = await db.creator_profiles.find_one({"id": campaign["creatorId"]}, {"_id": 0})
-    if campaign["brandId"] != current_user["id"] and (not creator or creator["userId"] != current_user["id"]):
+    if campaign["brandId"] != current_user["id"] and campaign["creatorId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    business = await db.business_profiles.find_one({"userId": campaign["brandId"]}, {"_id": 0})
-    if creator:
-        campaign["creatorName"] = creator.get("name", "")
-        if campaign.get("escrowStatus") in ["paid", "released"]:
-            campaign["instagramHandle"] = creator.get("instagramHandle")
-            campaign["instagramUrl"] = creator.get("instagramUrl")
-    if business:
-        campaign["brandName"] = business.get("brandName", "")
+    # Add Instagram handles if identity is unlocked
+    if campaign.get("identityUnlocked"):
+        creator_profile = await db.creator_profiles.find_one({"userId": campaign["creatorId"]}, {"_id": 0})
+        brand_profile = await db.brand_profiles.find_one({"userId": campaign["brandId"]}, {"_id": 0})
+        
+        if creator_profile:
+            campaign["creatorInstagram"] = creator_profile.get("instagramUsername")
+        if brand_profile:
+            campaign["brandInstagram"] = brand_profile.get("instagramUsername")
     
     return CampaignResponse(**campaign)
 
-@api_router.patch("/campaigns/{campaign_id}/status")
-async def update_campaign_status(campaign_id: str, status: str = Query(...), current_user: dict = Depends(get_current_user)):
-    """Update campaign status (accept/decline by creator, or mark delivered/completed)"""
+@api_router.get("/campaigns/my/list", response_model=List[CampaignResponse])
+async def get_my_campaigns(current_user: dict = Depends(get_current_user)):
+    """Get all campaigns for current user"""
+    campaigns = await db.campaigns.find(
+        {"$or": [{"brandId": current_user["id"]}, {"creatorId": current_user["id"]}]},
+        {"_id": 0}
+    ).sort("createdAt", -1).to_list(100)
+    
+    return [CampaignResponse(**c) for c in campaigns]
+
+@api_router.patch("/campaigns/{campaign_id}/confirm")
+async def confirm_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """Both parties confirm the campaign terms"""
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    valid_statuses = ["accepted", "declined", "in_progress", "delivered", "completed", "cancelled"]
-    if status not in valid_statuses:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {
+            "campaignStatus": "confirmed",
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }}
+    )
     
-    # Check permissions
-    creator = await db.creator_profiles.find_one({"id": campaign["creatorId"]}, {"_id": 0})
-    is_creator = creator and creator["userId"] == current_user["id"]
-    is_brand = campaign["brandId"] == current_user["id"]
-    
-    # Creator can: accept, decline, mark delivered
-    # Brand can: mark completed (releases escrow), cancel
-    if status in ["accepted", "declined", "delivered"] and not is_creator:
-        raise HTTPException(status_code=403, detail="Only creator can perform this action")
-    if status in ["completed", "cancelled"] and not is_brand:
-        raise HTTPException(status_code=403, detail="Only brand can perform this action")
-    
-    update_data = {"campaignStatus": status, "updatedAt": datetime.now(timezone.utc).isoformat()}
-    
-    # If completed, release escrow
-    if status == "completed" and campaign.get("escrowStatus") == "paid":
-        update_data["escrowStatus"] = "released"
-        update_data["escrowReleasedAt"] = datetime.now(timezone.utc).isoformat()
-    
-    await db.campaigns.update_one({"id": campaign_id}, {"$set": update_data})
-    
-    return {"message": f"Campaign status updated to {status}", "success": True}
+    return {"message": "Campaign confirmed! Proceed to payment.", "success": True}
 
-# ============== MESSAGE ROUTES (WITH ANTI-BYPASS) ==============
+# ============== PAYMENTS (TEST MODE) ==============
+
+@payment_router.get("/credits", response_model=UnlockCreditsResponse)
+async def get_credits(current_user: dict = Depends(get_current_user)):
+    """Get user's credit balance"""
+    credits = await get_user_credits(current_user["id"])
+    return UnlockCreditsResponse(**credits)
+
+@payment_router.post("/unlock-pack/order", response_model=PaymentOrderResponse)
+async def create_unlock_order(current_user: dict = Depends(get_current_user)):
+    """Create order for unlock pack (₹200 = 5 credits)"""
+    order_id = f"order_test_{uuid.uuid4().hex[:16]}"
+    
+    if razorpay_client:
+        try:
+            order = razorpay_client.order.create({
+                "amount": UNLOCK_PACK_PRICE,
+                "currency": "INR",
+                "payment_capture": 1,
+                "notes": {"userId": current_user["id"], "type": "unlock_pack"}
+            })
+            order_id = order["id"]
+        except Exception as e:
+            logging.error(f"Razorpay error: {e}")
+    
+    # Store order
+    await db.payments.insert_one({
+        "id": str(uuid.uuid4()),
+        "orderId": order_id,
+        "userId": current_user["id"],
+        "type": "unlock_pack",
+        "amount": UNLOCK_PACK_PRICE,
+        "mode": "TEST",
+        "status": "created",
+        "createdAt": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return PaymentOrderResponse(
+        orderId=order_id,
+        amount=UNLOCK_PACK_PRICE,
+        currency="INR",
+        keyId=RAZORPAY_KEY_ID,
+        testMode=True
+    )
+
+@payment_router.post("/unlock-pack/verify")
+async def verify_unlock_payment(
+    payment: PaymentVerifyRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Verify unlock pack payment and add credits"""
+    # In TEST MODE, we accept all payments
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(days=UNLOCK_CREDIT_VALIDITY_DAYS)
+    
+    # Update payment status
+    await db.payments.update_one(
+        {"orderId": payment.razorpay_order_id},
+        {"$set": {
+            "paymentId": payment.razorpay_payment_id,
+            "status": "paid_test",
+            "paidAt": now.isoformat()
+        }}
+    )
+    
+    # Add credits
+    existing = await db.credits.find_one({"userId": current_user["id"]})
+    if existing:
+        await db.credits.update_one(
+            {"userId": current_user["id"]},
+            {
+                "$inc": {"totalCredits": UNLOCK_PACK_CREDITS},
+                "$set": {"expiryDate": expiry.isoformat()}
+            }
+        )
+    else:
+        await db.credits.insert_one({
+            "userId": current_user["id"],
+            "totalCredits": UNLOCK_PACK_CREDITS,
+            "lockedCredits": 0,
+            "usedCredits": 0,
+            "expiryDate": expiry.isoformat(),
+            "createdAt": now.isoformat()
+        })
+    
+    return {"message": f"Payment successful (TEST)! {UNLOCK_PACK_CREDITS} credits added.", "success": True}
+
+@payment_router.post("/unlock-pack/demo")
+async def add_demo_credits(current_user: dict = Depends(get_current_user)):
+    """Add free demo credits for testing (no real payment)"""
+    now = datetime.now(timezone.utc)
+    expiry = now + timedelta(days=UNLOCK_CREDIT_VALIDITY_DAYS)
+    
+    existing = await db.credits.find_one({"userId": current_user["id"]})
+    if existing:
+        await db.credits.update_one(
+            {"userId": current_user["id"]},
+            {
+                "$inc": {"totalCredits": UNLOCK_PACK_CREDITS},
+                "$set": {"expiryDate": expiry.isoformat()}
+            }
+        )
+    else:
+        await db.credits.insert_one({
+            "userId": current_user["id"],
+            "totalCredits": UNLOCK_PACK_CREDITS,
+            "lockedCredits": 0,
+            "usedCredits": 0,
+            "expiryDate": expiry.isoformat(),
+            "createdAt": now.isoformat()
+        })
+    
+    return {"message": f"Demo credits added! {UNLOCK_PACK_CREDITS} credits valid for 7 days.", "success": True}
+
+@payment_router.post("/escrow/{campaign_id}/order", response_model=PaymentOrderResponse)
+async def create_escrow_order(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """Create escrow payment order for campaign"""
+    campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    if campaign["brandId"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only brand can pay escrow")
+    
+    if campaign["escrowStatus"] != "pending":
+        raise HTTPException(status_code=400, detail="Escrow already processed")
+    
+    amount_paise = int(campaign["price"] * 100)
+    order_id = f"escrow_test_{uuid.uuid4().hex[:16]}"
+    
+    if razorpay_client:
+        try:
+            order = razorpay_client.order.create({
+                "amount": amount_paise,
+                "currency": "INR",
+                "payment_capture": 1,
+                "notes": {"userId": current_user["id"], "campaignId": campaign_id, "type": "escrow"}
+            })
+            order_id = order["id"]
+        except Exception as e:
+            logging.error(f"Razorpay error: {e}")
+    
+    await db.payments.insert_one({
+        "id": str(uuid.uuid4()),
+        "orderId": order_id,
+        "userId": current_user["id"],
+        "campaignId": campaign_id,
+        "type": "escrow",
+        "amount": amount_paise,
+        "mode": "TEST",
+        "status": "created",
+        "createdAt": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return PaymentOrderResponse(
+        orderId=order_id,
+        amount=amount_paise,
+        currency="INR",
+        keyId=RAZORPAY_KEY_ID,
+        testMode=True
+    )
+
+@payment_router.post("/escrow/{campaign_id}/verify")
+async def verify_escrow_payment(
+    campaign_id: str,
+    payment: PaymentVerifyRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Verify escrow payment - UNLOCKS IDENTITY"""
+    campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update payment
+    await db.payments.update_one(
+        {"orderId": payment.razorpay_order_id},
+        {"$set": {
+            "paymentId": payment.razorpay_payment_id,
+            "status": "paid_test",
+            "paidAt": now.isoformat()
+        }}
+    )
+    
+    # Update campaign - UNLOCK IDENTITY
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {
+            "escrowStatus": "paid_test",
+            "campaignStatus": "in_progress",
+            "identityUnlocked": True,
+            "escrowPaidAt": now.isoformat(),
+            "updatedAt": now.isoformat()
+        }}
+    )
+    
+    return {
+        "message": "Escrow paid (TEST)! Instagram handles are now visible.",
+        "success": True,
+        "identityUnlocked": True
+    }
+
+@payment_router.post("/escrow/{campaign_id}/demo")
+async def demo_escrow_payment(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """Demo escrow payment - UNLOCKS IDENTITY without real payment"""
+    campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    if campaign["brandId"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only brand can pay escrow")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update campaign - UNLOCK IDENTITY
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {
+            "escrowStatus": "paid_test",
+            "campaignStatus": "in_progress",
+            "identityUnlocked": True,
+            "escrowPaidAt": now.isoformat(),
+            "updatedAt": now.isoformat()
+        }}
+    )
+    
+    return {
+        "message": "Demo escrow marked as paid! Instagram handles unlocked.",
+        "success": True,
+        "identityUnlocked": True
+    }
+
+# ============== MESSAGES (WITH ANTI-BYPASS) ==============
 
 @message_router.get("/{campaign_id}", response_model=List[MessageResponse])
 async def get_messages(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """Get chat messages for a campaign"""
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    creator = await db.creator_profiles.find_one({"id": campaign["creatorId"]}, {"_id": 0})
-    if campaign["brandId"] != current_user["id"] and (not creator or creator["userId"] != current_user["id"]):
+    if campaign["brandId"] != current_user["id"] and campaign["creatorId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    messages = await db.messages.find({"requestId": campaign_id}, {"_id": 0}).sort("createdAt", 1).to_list(500)
-    return [MessageResponse(**msg) for msg in messages]
+    messages = await db.messages.find({"campaignId": campaign_id}, {"_id": 0}).sort("createdAt", 1).to_list(500)
+    return [MessageResponse(**m) for m in messages]
 
 @message_router.post("/{campaign_id}", response_model=MessageResponse)
-async def send_message(campaign_id: str, msg_data: MessageCreate, current_user: dict = Depends(get_current_user)):
+async def send_message(
+    campaign_id: str,
+    msg_data: MessageCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Send a message in campaign chat"""
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    creator = await db.creator_profiles.find_one({"id": campaign["creatorId"]}, {"_id": 0})
-    if campaign["brandId"] != current_user["id"] and (not creator or creator["userId"] != current_user["id"]):
+    if campaign["brandId"] != current_user["id"] and campaign["creatorId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Check for bypass attempts BEFORE escrow
+    # Check for bypass BEFORE identity unlock
     is_blocked = False
     block_reason = None
     
-    if campaign.get("escrowStatus") != "paid" and campaign.get("escrowStatus") != "released":
+    if not campaign.get("identityUnlocked"):
         is_blocked, block_reason = check_message_for_bypass(msg_data.text)
         
         if is_blocked:
-            # Log bypass attempt
             await db.bypass_attempts.insert_one({
                 "id": str(uuid.uuid4()),
                 "campaignId": campaign_id,
@@ -1164,19 +1429,21 @@ async def send_message(campaign_id: str, msg_data: MessageCreate, current_user: 
     
     # Get sender name
     sender_name = current_user["email"]
-    if current_user["role"] == "creator" and creator:
-        sender_name = creator.get("name", current_user["email"])
-    elif current_user["role"] == "business":
-        business = await db.business_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
-        if business:
-            sender_name = business.get("brandName", current_user["email"])
+    if current_user["role"] == "creator":
+        profile = await db.creator_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
+        if profile:
+            sender_name = profile.get("name", sender_name)
+    else:
+        profile = await db.brand_profiles.find_one({"userId": current_user["id"]}, {"_id": 0})
+        if profile:
+            sender_name = profile.get("brandName", sender_name)
     
     message_doc = {
         "id": str(uuid.uuid4()),
-        "requestId": campaign_id,
+        "campaignId": campaign_id,
         "senderUserId": current_user["id"],
         "senderName": sender_name,
-        "text": msg_data.text if not is_blocked else "[Message blocked - external contact sharing not allowed before payment]",
+        "text": msg_data.text if not is_blocked else "[Message blocked - external contact not allowed before payment]",
         "isBlocked": is_blocked,
         "blockReason": block_reason,
         "createdAt": datetime.now(timezone.utc).isoformat()
@@ -1184,126 +1451,90 @@ async def send_message(campaign_id: str, msg_data: MessageCreate, current_user: 
     
     await db.messages.insert_one(message_doc)
     
-    # Add warning message if blocked
     if is_blocked:
-        warning_doc = {
+        # Add system warning
+        await db.messages.insert_one({
             "id": str(uuid.uuid4()),
-            "requestId": campaign_id,
+            "campaignId": campaign_id,
             "senderUserId": "system",
             "senderName": "🍊 Orange",
-            "text": "⚠️ Please keep communication inside Orange for safety. External contact sharing is enabled after campaign payment.",
+            "text": "⚠️ External contact sharing is blocked until escrow payment. Keep communication inside Orange for safety.",
             "isBlocked": False,
             "blockReason": None,
             "createdAt": datetime.now(timezone.utc).isoformat()
-        }
-        await db.messages.insert_one(warning_doc)
+        })
     
     return MessageResponse(**message_doc)
 
-# ============== ADMIN ROUTES ==============
+# ============== ADMIN ==============
 
-@admin_router.get("/stats", response_model=AdminStats)
+@admin_router.get("/stats")
 async def get_admin_stats(admin: dict = Depends(get_admin_user)):
-    """Get admin dashboard stats"""
-    total_users = await db.users.count_documents({})
-    total_creators = await db.creator_profiles.count_documents({})
-    total_brands = await db.business_profiles.count_documents({})
-    total_campaigns = await db.campaigns.count_documents({})
-    bypass_attempts = await db.bypass_attempts.count_documents({})
-    active_unlocks = await db.unlock_credits.count_documents({"usedCredits": {"$lt": "$totalCredits"}})
-    
-    # Calculate revenue from paid payments
-    payments = await db.payments.find({"status": "paid"}, {"_id": 0, "amount": 1}).to_list(1000)
-    total_revenue = sum(p.get("amount", 0) for p in payments) / 100  # Convert paise to rupees
-    
-    return AdminStats(
-        totalUsers=total_users,
-        totalCreators=total_creators,
-        totalBrands=total_brands,
-        totalCampaigns=total_campaigns,
-        totalRevenue=total_revenue,
-        bypassAttempts=bypass_attempts,
-        activeUnlocks=active_unlocks
-    )
+    """Admin dashboard stats"""
+    stats = {
+        "totalUsers": await db.users.count_documents({}),
+        "totalCreators": await db.creator_profiles.count_documents({}),
+        "totalBrands": await db.brand_profiles.count_documents({}),
+        "verifiedCreators": await db.creator_profiles.count_documents({"instagramVerified": True}),
+        "verifiedBrands": await db.brand_profiles.count_documents({"instagramVerified": True}),
+        "totalRequests": await db.collab_requests.count_documents({}),
+        "totalCampaigns": await db.campaigns.count_documents({}),
+        "completedCampaigns": await db.campaigns.count_documents({"campaignStatus": "completed"}),
+        "bypassAttempts": await db.bypass_attempts.count_documents({}),
+        "totalPayments": await db.payments.count_documents({"status": "paid_test"})
+    }
+    return stats
 
-@admin_router.get("/bypass-attempts", response_model=List[FlaggedChat])
+@admin_router.get("/bypass-attempts")
 async def get_bypass_attempts(limit: int = 50, admin: dict = Depends(get_admin_user)):
-    """Get flagged chat messages"""
+    """Get flagged bypass attempts"""
     attempts = await db.bypass_attempts.find({}, {"_id": 0}).sort("createdAt", -1).limit(limit).to_list(limit)
-    
-    result = []
-    for attempt in attempts:
-        user = await db.users.find_one({"id": attempt["userId"]}, {"_id": 0, "email": 1})
-        result.append(FlaggedChat(
-            id=attempt["id"],
-            campaignId=attempt["campaignId"],
-            senderName=user.get("email", "Unknown") if user else "Unknown",
-            message=attempt["message"],
-            reason=attempt["reason"],
-            createdAt=attempt["createdAt"]
-        ))
-    
-    return result
+    return attempts
 
 @admin_router.post("/users/{user_id}/ban")
 async def ban_user(user_id: str, admin: dict = Depends(get_admin_user)):
     """Ban a user"""
-    result = await db.users.update_one({"id": user_id}, {"$set": {"isBanned": True}})
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User banned successfully"}
+    await db.users.update_one({"id": user_id}, {"$set": {"isBanned": True}})
+    return {"message": "User banned"}
 
-@admin_router.post("/users/{user_id}/unban")
-async def unban_user(user_id: str, admin: dict = Depends(get_admin_user)):
-    """Unban a user"""
-    result = await db.users.update_one({"id": user_id}, {"$set": {"isBanned": False}})
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User unbanned successfully"}
+# ============== UPLOAD ==============
 
-@admin_router.delete("/unlock-credits/{brand_id}")
-async def revoke_unlock_credits(brand_id: str, admin: dict = Depends(get_admin_user)):
-    """Revoke a brand's unlock credits"""
-    result = await db.unlock_credits.delete_one({"brandId": brand_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="No credits found for this brand")
-    return {"message": "Unlock credits revoked"}
+@api_router.post("/upload")
+async def upload_file(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Upload file to Cloudinary"""
+    try:
+        contents = await file.read()
+        content_type = file.content_type or ""
+        resource_type = "video" if content_type.startswith("video") else "image"
+        
+        result = cloudinary.uploader.upload(
+            contents,
+            resource_type=resource_type,
+            folder="orange_marketplace",
+            public_id=f"{current_user['id']}_{uuid.uuid4()}"
+        )
+        
+        return {
+            "url": result.get("secure_url", result.get("url", "")),
+            "thumbnailUrl": result.get("secure_url", result.get("url", "")),
+            "type": resource_type
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-# ============== LEGACY ROUTES (For compatibility) ==============
-
-@api_router.get("/creators", response_model=List[CreatorDiscoveryResponse])
-async def get_creators_legacy(
-    niche: Optional[str] = Query(None),
-    minFollowers: Optional[int] = Query(None),
-    maxFollowers: Optional[int] = Query(None),
-    location: Optional[str] = Query(None),
-    openToBarter: Optional[bool] = Query(None),
-    limit: int = Query(50, le=100),
-    skip: int = Query(0),
-    current_user: dict = Depends(get_current_user)
-):
-    """Redirect to discover endpoint"""
-    return await discover_creators(niche, minFollowers, maxFollowers, location, openToBarter, limit, skip, current_user)
-
-# ============== SEED DATA ==============
+# ============== SEED ==============
 
 @api_router.post("/seed")
 async def seed_data():
-    """Seed database with sample data"""
-    # Clear existing data
-    await db.users.delete_many({})
-    await db.creator_profiles.delete_many({})
-    await db.business_profiles.delete_many({})
-    await db.campaigns.delete_many({})
-    await db.messages.delete_many({})
-    await db.unlock_credits.delete_many({})
-    await db.creator_unlocks.delete_many({})
-    await db.payments.delete_many({})
-    await db.bypass_attempts.delete_many({})
+    """Seed demo data"""
+    # Clear existing
+    for col in ["users", "creator_profiles", "brand_profiles", "credits", "profile_unlocks", 
+                "collab_requests", "campaigns", "messages", "payments", "bypass_attempts"]:
+        await db[col].delete_many({})
     
     now = datetime.now(timezone.utc).isoformat()
     
-    # Create admin user
+    # Admin
     admin_id = str(uuid.uuid4())
     await db.users.insert_one({
         "id": admin_id,
@@ -1311,86 +1542,23 @@ async def seed_data():
         "passwordHash": get_password_hash("admin123"),
         "role": "business",
         "hasCompletedOnboarding": True,
+        "instagramVerified": True,
         "isAdmin": True,
+        "isBanned": False,
         "createdAt": now
     })
     
-    # Create sample creators
-    creators_data = [
-        {
-            "name": "Priya Sharma",
-            "bio": "Fashion & lifestyle creator ✨ Making everyday looks pop! 500K+ community of style lovers.",
-            "location": "Mumbai, India",
-            "instagramHandle": "@priyasharma",
-            "instagramUrl": "https://instagram.com/priyasharma",
-            "followersCount": 520000,
-            "engagementRate": 5.8,
-            "avgReelViews": 45000,
-            "niches": ["Fashion", "Lifestyle"],
-            "isOpenToBarter": True,
-            "rates": {"reelPrice": 15000, "storyPrice": 5000, "postPrice": 10000, "bundlePrice": 25000},
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400"
-        },
-        {
-            "name": "Arjun Kapoor",
-            "bio": "Fitness enthusiast & sports content creator 💪 Transforming bodies and minds.",
-            "location": "Delhi, India",
-            "instagramHandle": "@arjunfitness",
-            "instagramUrl": "https://instagram.com/arjunfitness",
-            "followersCount": 280000,
-            "engagementRate": 4.2,
-            "avgReelViews": 28000,
-            "niches": ["Fitness", "Sports"],
-            "isOpenToBarter": False,
-            "rates": {"reelPrice": 12000, "storyPrice": 4000, "postPrice": 8000, "bundlePrice": 20000},
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400"
-        },
-        {
-            "name": "Meera Patel",
-            "bio": "Beauty guru & skincare addict 💄 Honest reviews and glam tutorials.",
-            "location": "Bangalore, India",
-            "instagramHandle": "@meerabellebeauty",
-            "instagramUrl": "https://instagram.com/meerabellebeauty",
-            "followersCount": 150000,
-            "engagementRate": 6.5,
-            "avgReelViews": 18000,
-            "niches": ["Beauty", "Skincare"],
-            "isOpenToBarter": True,
-            "rates": {"reelPrice": 8000, "storyPrice": 3000, "postPrice": 6000, "bundlePrice": 15000},
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400"
-        },
-        {
-            "name": "Rohan Desai",
-            "bio": "Tech reviewer & gadget geek 📱 Unboxing the future, one device at a time.",
-            "location": "Pune, India",
-            "instagramHandle": "@rohantech",
-            "instagramUrl": "https://instagram.com/rohantech",
-            "followersCount": 95000,
-            "engagementRate": 7.2,
-            "avgReelViews": 12000,
-            "niches": ["Tech", "Gaming"],
-            "isOpenToBarter": False,
-            "rates": {"reelPrice": 10000, "storyPrice": 3500, "postPrice": 7000, "bundlePrice": 18000},
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400"
-        },
-        {
-            "name": "Ananya Iyer",
-            "bio": "Food blogger & culinary explorer 🍜 From street food to fine dining.",
-            "location": "Chennai, India",
-            "instagramHandle": "@ananyaeats",
-            "instagramUrl": "https://instagram.com/ananyaeats",
-            "followersCount": 320000,
-            "engagementRate": 5.1,
-            "avgReelViews": 35000,
-            "niches": ["Food", "Travel"],
-            "isOpenToBarter": True,
-            "rates": {"reelPrice": 14000, "storyPrice": 4500, "postPrice": 9000, "bundlePrice": 22000},
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
-        }
+    # Sample Creators
+    creators = [
+        {"name": "Priya Sharma", "location": "Mumbai", "niches": ["Fashion", "Lifestyle"], 
+         "followers": 520000, "engagement": 5.8, "rates": {"reelPrice": 15000, "storyPrice": 5000, "carouselPrice": 10000}},
+        {"name": "Arjun Kapoor", "location": "Delhi", "niches": ["Fitness", "Sports"],
+         "followers": 280000, "engagement": 4.2, "rates": {"reelPrice": 12000, "storyPrice": 4000, "carouselPrice": 8000}},
+        {"name": "Meera Patel", "location": "Bangalore", "niches": ["Beauty", "Skincare"],
+         "followers": 150000, "engagement": 6.5, "rates": {"reelPrice": 8000, "storyPrice": 3000, "carouselPrice": 6000}},
     ]
     
-    creator_profiles = []
-    for i, creator in enumerate(creators_data):
+    for i, c in enumerate(creators):
         user_id = str(uuid.uuid4())
         profile_id = str(uuid.uuid4())
         
@@ -1400,102 +1568,116 @@ async def seed_data():
             "passwordHash": get_password_hash("password123"),
             "role": "creator",
             "hasCompletedOnboarding": True,
+            "instagramVerified": True,
+            "instagramUserId": f"ig_{uuid.uuid4().hex[:8]}",
+            "instagramUsername": f"@{c['name'].lower().replace(' ', '')}",
             "isAdmin": False,
+            "isBanned": False,
             "createdAt": now
         })
         
-        profile_doc = {
+        await db.creator_profiles.insert_one({
             "id": profile_id,
             "userId": user_id,
-            **creator,
-            "mediaGallery": [],
+            "name": c["name"],
+            "bio": f"Content creator passionate about {c['niches'][0].lower()}",
+            "location": c["location"],
+            "instagramUserId": f"ig_{uuid.uuid4().hex[:8]}",
+            "instagramUsername": f"@{c['name'].lower().replace(' ', '')}",
+            "instagramVerified": True,
+            "followersCount": c["followers"],
+            "engagementRate": c["engagement"],
+            "niches": c["niches"],
+            "isOpenToBarter": i % 2 == 0,
+            "rates": c["rates"],
+            "profilePhotoUrl": f"https://i.pravatar.cc/300?img={10+i}",
+            "sampleContent": [],
             "createdAt": now,
             "updatedAt": now
-        }
-        await db.creator_profiles.insert_one(profile_doc)
-        creator_profiles.append(profile_doc)
+        })
     
-    # Create sample businesses
-    businesses_data = [
-        {
-            "brandName": "Glow Cosmetics",
-            "category": "Beauty",
-            "bio": "Clean beauty for the modern generation ✨",
-            "location": "Mumbai, India",
-            "websiteUrl": "https://glowcosmetics.com",
-            "instagramHandle": "@glowcosmetics",
-            "instagramUrl": "https://instagram.com/glowcosmetics",
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=400"
-        },
-        {
-            "brandName": "FitLife Nutrition",
-            "category": "Health & Fitness",
-            "bio": "Fueling your fitness journey with premium supplements 💪",
-            "location": "Delhi, India",
-            "websiteUrl": "https://fitlifenutrition.com",
-            "instagramHandle": "@fitlifenutrition",
-            "instagramUrl": "https://instagram.com/fitlifenutrition",
-            "profilePhotoUrl": "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=400"
-        }
+    # Sample Brands
+    brands = [
+        {"name": "Glow Cosmetics", "industry": "Beauty", "location": "Mumbai", "budget": "₹10k-₹50k", "niches": ["Beauty", "Skincare"]},
+        {"name": "FitLife Nutrition", "industry": "Health & Fitness", "location": "Delhi", "budget": "₹15k-₹40k", "niches": ["Fitness", "Health"]},
     ]
     
-    business_users = []
-    for i, business in enumerate(businesses_data):
+    for i, b in enumerate(brands):
         user_id = str(uuid.uuid4())
         profile_id = str(uuid.uuid4())
         
         await db.users.insert_one({
             "id": user_id,
-            "email": f"business{i+1}@orange.com",
+            "email": f"brand{i+1}@orange.com",
             "passwordHash": get_password_hash("password123"),
             "role": "business",
             "hasCompletedOnboarding": True,
+            "instagramVerified": True,
+            "instagramUserId": f"ig_{uuid.uuid4().hex[:8]}",
+            "instagramUsername": f"@{b['name'].lower().replace(' ', '')}",
             "isAdmin": False,
+            "isBanned": False,
             "createdAt": now
         })
         
-        await db.business_profiles.insert_one({
+        # Give brands some credits
+        expiry = datetime.now(timezone.utc) + timedelta(days=7)
+        await db.credits.insert_one({
+            "userId": user_id,
+            "totalCredits": 5,
+            "lockedCredits": 0,
+            "usedCredits": 0,
+            "expiryDate": expiry.isoformat(),
+            "createdAt": now
+        })
+        
+        await db.brand_profiles.insert_one({
             "id": profile_id,
             "userId": user_id,
-            **business,
-            "mediaGallery": [],
+            "brandName": b["name"],
+            "industry": b["industry"],
+            "bio": f"Leading brand in {b['industry'].lower()}",
+            "location": b["location"],
+            "instagramUserId": f"ig_{uuid.uuid4().hex[:8]}",
+            "instagramUsername": f"@{b['name'].lower().replace(' ', '')}",
+            "instagramVerified": True,
+            "budgetRange": b["budget"],
+            "preferredNiches": b["niches"],
+            "isOpenToBarter": True,
+            "profilePhotoUrl": f"https://i.pravatar.cc/300?img={20+i}",
+            "pastCampaigns": [],
+            "pastCollabCount": 0,
             "createdAt": now,
             "updatedAt": now
         })
-        business_users.append({"userId": user_id, "profileId": profile_id})
-        
-        # Give first business some unlock credits for testing
-        if i == 0:
-            expiry = datetime.now(timezone.utc) + timedelta(days=7)
-            await db.unlock_credits.insert_one({
-                "brandId": user_id,
-                "totalCredits": 5,
-                "usedCredits": 0,
-                "expiryDate": expiry.isoformat(),
-                "createdAt": now
-            })
     
     return {
-        "message": "Seed data created successfully",
-        "creators": len(creators_data),
-        "businesses": len(businesses_data),
-        "admin": "admin@orange.com / admin123"
+        "message": "Seed data created!",
+        "creators": len(creators),
+        "brands": len(brands),
+        "demo_accounts": {
+            "admin": "admin@orange.com / admin123",
+            "creator": "creator1@orange.com / password123",
+            "brand": "brand1@orange.com / password123 (5 credits)"
+        }
     }
 
-# ============== ROOT ROUTES ==============
+# ============== ROOT ==============
 
 @api_router.get("/")
 async def root():
-    return {"message": "Welcome to Orange - Creator Marketplace API 🍊"}
+    return {"message": "Orange - Two-Way Creator Marketplace API 🍊", "version": "2.0"}
 
 @api_router.get("/health")
 async def health():
-    return {"status": "healthy", "service": "orange-marketplace"}
+    return {"status": "healthy", "testMode": True}
 
-# Include all routers
+# Include routers
 api_router.include_router(auth_router)
 api_router.include_router(creator_router)
 api_router.include_router(business_router)
+api_router.include_router(marketplace_router)
+api_router.include_router(request_router)
 api_router.include_router(payment_router)
 api_router.include_router(message_router)
 api_router.include_router(admin_router)
@@ -1509,11 +1691,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
