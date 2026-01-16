@@ -12,7 +12,7 @@ import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Progress } from '../../components/ui/progress';
 import { Badge } from '../../components/ui/badge';
-import { businessAPI, uploadAPI, instagramAPI } from '../../lib/api';
+import { businessAPI, uploadAPI, instagramAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -203,8 +203,7 @@ const BusinessOnboarding = () => {
       toast.success("Brand profile ready! Let's find your next favorite creator 🤝");
       navigate('/dashboard/business');
     } catch (error) {
-      const errorMsg = error.response?.data?.detail || error.response?.data?.message || "Failed to create profile";
-      toast.error(typeof errorMsg === 'string' ? errorMsg : "Failed to create profile");
+      toast.error(getErrorMessage(error, "Failed to create profile"));
     } finally {
       setLoading(false);
     }
