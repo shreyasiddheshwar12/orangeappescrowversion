@@ -103,12 +103,13 @@ Brand: brand1@orange.com / password123 (starts with 5 credits)
 ## What's Working (Jan 2026)
 1. ✅ Full authentication flow
 2. ✅ Creator and brand dashboards
-3. ✅ Marketplace discovery with filters
+3. ✅ **Two-way marketplace discovery** (brands see creators, creators see brands)
 4. ✅ Credit-based unlock system
 5. ✅ Demo credits for testing
 6. ✅ Instagram verification (simulated)
 7. ✅ Admin statistics endpoint
 8. ✅ Responsive UI with Orange theme
+9. ✅ New creator onboarding properly adds to marketplace
 
 ## Pending Features (P1)
 1. ⏳ Two-way request flow (backend ready, frontend pending)
