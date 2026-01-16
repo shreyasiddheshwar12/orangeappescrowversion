@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Send, Loader2, DollarSign, Clock, Package } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, DollarSign, Clock, Package, Lock, AlertTriangle, CreditCard } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
-import { requestsAPI, messagesAPI } from '../lib/api';
+import { campaignsAPI, messagesAPI, paymentsAPI } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { toast } from 'sonner';
 
@@ -14,16 +14,17 @@ const Chat = () => {
   const { requestId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [request, setRequest] = useState(null);
+  const [campaign, setCampaign] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [payingEscrow, setPayingEscrow] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadMessages, 5000); // Poll for new messages
+    const interval = setInterval(loadMessages, 5000);
     return () => clearInterval(interval);
   }, [requestId]);
 
@@ -33,11 +34,11 @@ const Chat = () => {
 
   const loadData = async () => {
     try {
-      const [requestRes, messagesRes] = await Promise.all([
-        requestsAPI.getById(requestId),
+      const [campaignRes, messagesRes] = await Promise.all([
+        campaignsAPI.getById(requestId),
         messagesAPI.getMessages(requestId)
       ]);
-      setRequest(requestRes.data);
+      setCampaign(campaignRes.data);
       setMessages(messagesRes.data);
     } catch (error) {
       toast.error("Failed to load chat");
@@ -69,10 +70,64 @@ const Chat = () => {
       const response = await messagesAPI.sendMessage(requestId, newMessage);
       setMessages(prev => [...prev, response.data]);
       setNewMessage('');
+      
+      // Check if message was blocked
+      if (response.data.isBlocked) {
+        toast.warning("Message blocked - external contact sharing is not allowed before payment");
+      }
     } catch (error) {
       toast.error("Failed to send message");
     } finally {
       setSending(false);
+    }
+  };
+
+  const handlePayEscrow = async () => {
+    setPayingEscrow(true);
+    try {
+      const orderRes = await paymentsAPI.createEscrowOrder(requestId);
+      const { orderId, amount, keyId } = orderRes.data;
+
+      if (!keyId) {
+        toast.error("Payment not configured. Contact admin.");
+        setPayingEscrow(false);
+        return;
+      }
+
+      const options = {
+        key: keyId,
+        amount: amount,
+        currency: "INR",
+        name: "Orange",
+        description: `Campaign Payment - ${campaign.title}`,
+        order_id: orderId,
+        handler: async (response) => {
+          try {
+            await paymentsAPI.verifyEscrowPayment(requestId, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            });
+            toast.success("Payment successful! Full access unlocked 🎉");
+            loadData(); // Refresh campaign
+          } catch (err) {
+            toast.error("Payment verification failed");
+          }
+        },
+        prefill: {
+          email: user?.email || ""
+        },
+        theme: {
+          color: "#FF6B00"
+        }
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      toast.error("Failed to create payment order");
+    } finally {
+      setPayingEscrow(false);
     }
   };
 
@@ -111,9 +166,13 @@ const Chat = () => {
   }
 
   const isCreator = user?.role === 'creator';
+  const isBrand = user?.role === 'business';
   const otherParty = isCreator 
-    ? { name: request?.businessName, photo: request?.businessPhoto }
-    : { name: request?.creatorName, photo: request?.creatorPhoto };
+    ? { name: campaign?.brandName, photo: null }
+    : { name: campaign?.creatorName, photo: null };
+  
+  const escrowPaid = campaign?.escrowStatus === 'paid' || campaign?.escrowStatus === 'released';
+  const canPayEscrow = isBrand && campaign?.campaignStatus === 'accepted' && campaign?.escrowStatus === 'pending';
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -133,48 +192,89 @@ const Chat = () => {
           
           <div className="flex-1">
             <h2 className="font-semibold">{otherParty.name}</h2>
-            <p className="text-xs text-muted-foreground">{request?.title}</p>
+            <p className="text-xs text-muted-foreground">{campaign?.title}</p>
           </div>
           
-          <Badge className={
-            request?.status === 'accepted' ? 'bg-green-100 text-green-800' :
-            request?.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-red-100 text-red-800'
-          }>
-            {request?.status}
-          </Badge>
+          <div className="flex gap-2">
+            <Badge className={
+              campaign?.campaignStatus === 'accepted' ? 'bg-green-100 text-green-800' :
+              campaign?.campaignStatus === 'proposed' ? 'bg-blue-100 text-blue-800' :
+              campaign?.campaignStatus === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+              'bg-gray-100 text-gray-800'
+            }>
+              {campaign?.campaignStatus?.replace('_', ' ')}
+            </Badge>
+            <Badge className={escrowPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}>
+              {escrowPaid ? '💰 Paid' : '⏳ Awaiting Payment'}
+            </Badge>
+          </div>
         </div>
       </header>
 
-      {/* Request Details Card */}
+      {/* Campaign Details Card */}
       <div className="bg-muted/30 border-b border-orange-100 px-4 py-3">
         <div className="max-w-4xl mx-auto">
           <div className="card-orange p-4">
-            <h3 className="font-heading font-bold mb-2">{request?.title}</h3>
-            <p className="text-sm text-muted-foreground mb-3">{request?.brief}</p>
+            <h3 className="font-heading font-bold mb-2">{campaign?.title}</h3>
+            <p className="text-sm text-muted-foreground mb-3">{campaign?.brief}</p>
             <div className="flex flex-wrap gap-4 text-sm">
-              {request?.offerAmount > 0 && (
+              {campaign?.price > 0 && (
                 <div className="flex items-center gap-1 text-primary font-semibold">
                   <DollarSign className="w-4 h-4" />
-                  {formatPrice(request.offerAmount)}
+                  {formatPrice(campaign.price)}
                 </div>
               )}
-              {request?.deliverables && (
+              {campaign?.deliverables && (
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Package className="w-4 h-4" />
-                  {request.deliverables}
+                  {campaign.deliverables}
                 </div>
               )}
-              {request?.timeline && (
+              {campaign?.timeline && (
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Clock className="w-4 h-4" />
-                  {request.timeline}
+                  {campaign.timeline}
                 </div>
               )}
+              {campaign?.isBarter && (
+                <Badge className="bg-accent/50">🤝 Barter Deal</Badge>
+              )}
             </div>
+            
+            {/* Pay Escrow Button for Brands */}
+            {canPayEscrow && (
+              <div className="mt-4 pt-4 border-t border-orange-100">
+                <Button 
+                  onClick={handlePayEscrow} 
+                  className="w-full btn-primary"
+                  disabled={payingEscrow}
+                  data-testid="pay-escrow-btn"
+                >
+                  {payingEscrow ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <CreditCard className="w-4 h-4 mr-2" />
+                  )}
+                  Pay {formatPrice(campaign.price)} to Unlock Full Access
+                </Button>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Payment held in escrow. Released after you approve the delivery.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Chat Restriction Warning */}
+      {!escrowPaid && (
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2">
+          <div className="max-w-4xl mx-auto flex items-center gap-2 text-sm text-orange-800">
+            <AlertTriangle className="w-4 h-4" />
+            <span>External contact sharing (Instagram, phone, etc.) is blocked until escrow payment</span>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -187,6 +287,7 @@ const Chat = () => {
           ) : (
             messages.map((message, idx) => {
               const isOwnMessage = message.senderUserId === user?.id;
+              const isSystemMessage = message.senderUserId === 'system';
               const showDateHeader = idx === 0 || 
                 formatDate(messages[idx - 1].createdAt) !== formatDate(message.createdAt);
               
@@ -199,34 +300,54 @@ const Chat = () => {
                       </span>
                     </div>
                   )}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`flex gap-2 max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
-                      {!isOwnMessage && (
-                        <Avatar className="w-8 h-8 border border-orange-100">
-                          <AvatarImage src={otherParty.photo} />
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                            {message.senderName?.[0]}
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                      <div>
-                        <div className={`px-4 py-2 rounded-2xl ${
-                          isOwnMessage 
-                            ? 'bg-primary text-white rounded-tr-none' 
-                            : 'bg-white border border-orange-100 rounded-tl-none'
-                        }`}>
-                          <p className="text-sm">{message.text}</p>
-                        </div>
-                        <p className={`text-xs text-muted-foreground mt-1 ${isOwnMessage ? 'text-right' : ''}`}>
-                          {formatTime(message.createdAt)}
+                  
+                  {isSystemMessage ? (
+                    // System warning message
+                    <div className="flex justify-center">
+                      <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2 max-w-md">
+                        <p className="text-sm text-orange-800 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4" />
+                          {message.text}
                         </p>
                       </div>
                     </div>
-                  </motion.div>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`flex gap-2 max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+                        {!isOwnMessage && (
+                          <Avatar className="w-8 h-8 border border-orange-100">
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                              {message.senderName?.[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        <div>
+                          <div className={`px-4 py-2 rounded-2xl ${
+                            message.isBlocked 
+                              ? 'bg-red-50 border border-red-200 text-red-800'
+                              : isOwnMessage 
+                                ? 'bg-primary text-white rounded-tr-none' 
+                                : 'bg-white border border-orange-100 rounded-tl-none'
+                          }`}>
+                            {message.isBlocked && (
+                              <div className="flex items-center gap-1 text-xs mb-1 text-red-600">
+                                <Lock className="w-3 h-3" />
+                                Blocked
+                              </div>
+                            )}
+                            <p className="text-sm">{message.text}</p>
+                          </div>
+                          <p className={`text-xs text-muted-foreground mt-1 ${isOwnMessage ? 'text-right' : ''}`}>
+                            {formatTime(message.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               );
             })
@@ -241,7 +362,7 @@ const Chat = () => {
           <Input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type your message..."
+            placeholder={escrowPaid ? "Type your message..." : "Type your message (external contacts blocked)..."}
             className="flex-1 input-orange"
             disabled={sending}
             data-testid="message-input"
