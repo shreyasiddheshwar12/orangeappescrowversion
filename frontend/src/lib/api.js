@@ -60,19 +60,24 @@ export const uploadAPI = {
 export const creatorAPI = {
   createProfile: (data) => api.post('/creator/profile', data),
   getProfile: () => api.get('/creator/profile'),
-  getRequests: () => api.get('/creator/requests'),
+  getRequests: () => requestsAPI.getIncoming(),
 };
 
 // Business API
 export const businessAPI = {
   createProfile: (data) => api.post('/business/profile', data),
   getProfile: () => api.get('/business/profile'),
-  getUnlockCredits: () => api.get('/business/unlock-credits'),
+  getUnlockCredits: () => paymentsAPI.getCredits(),
 };
 
-// Marketplace API (Gated)
+// Instagram Verification (Simulated)
+export const instagramAPI = {
+  verify: (username) => api.post('/instagram/verify', { instagramUsername: username }),
+};
+
+// Marketplace API (Gated - Two-Way)
 export const marketplaceAPI = {
-  // Layer 1: Discovery (Free)
+  // Layer 1: Discovery (Free) - Brands see creators
   discoverCreators: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.niche) params.append('niche', filters.niche);
@@ -80,38 +85,53 @@ export const marketplaceAPI = {
     if (filters.maxFollowers) params.append('maxFollowers', filters.maxFollowers);
     if (filters.location) params.append('location', filters.location);
     if (filters.openToBarter !== undefined) params.append('openToBarter', filters.openToBarter);
-    return api.get(`/creators/discover?${params.toString()}`);
+    return api.get(`/marketplace/creators?${params.toString()}`);
   },
   
-  // Layer 2: Unlocked (After ₹200)
-  getUnlockedCreator: (id) => api.get(`/creators/${id}/unlocked`),
+  // Layer 1: Discovery (Free) - Creators see brands
+  discoverBrands: (filters = {}) => {
+    const params = new URLSearchParams();
+    if (filters.industry) params.append('industry', filters.industry);
+    if (filters.location) params.append('location', filters.location);
+    if (filters.openToBarter !== undefined) params.append('openToBarter', filters.openToBarter);
+    return api.get(`/marketplace/brands?${params.toString()}`);
+  },
   
-  // Layer 3: Full Access (After Escrow)
-  getFullCreator: (id) => api.get(`/creators/${id}/full`),
+  // Layer 2: Unlocked (After Credit)
+  getUnlockedCreator: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
+  getUnlockedBrand: (id) => api.get(`/marketplace/brands/${id}/unlocked`),
   
-  // Unlock a creator
-  unlockCreator: (id) => api.post(`/creators/${id}/unlock`),
+  // Layer 3: Full Access (After Escrow) - handled via campaign
+  getFullCreator: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
   
-  // Legacy (redirects to discover)
+  // Unlock a profile (costs 1 credit)
+  unlockCreator: (id) => api.post(`/marketplace/creator/${id}/unlock`),
+  unlockBrand: (id) => api.post(`/marketplace/brand/${id}/unlock`),
+  
+  // Legacy compatibility
   getCreators: (filters = {}) => marketplaceAPI.discoverCreators(filters),
-  getCreatorById: (id) => api.get(`/creators/${id}/unlocked`),
-  getBusinessById: (id) => api.get(`/businesses/${id}`),
+  getCreatorById: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
+  getBusinessById: (id) => api.get(`/marketplace/brands/${id}/unlocked`),
 };
 
-// Campaigns API (Replaces Requests)
+// Two-Way Request API
+export const requestsAPI = {
+  // Send a collab request (works both ways)
+  create: (data) => api.post('/requests', data),
+  getIncoming: () => api.get('/requests/incoming'),
+  getOutgoing: () => api.get('/requests/outgoing'),
+  respond: (id, action) => api.patch(`/requests/${id}/respond?action=${action}`),
+};
+
+// Campaigns API (After request acceptance)
 export const campaignsAPI = {
   create: (data) => api.post('/campaigns', data),
-  getSent: () => api.get('/campaigns/sent'),
+  getMyCampaigns: () => api.get('/campaigns/my/list'),
   getById: (id) => api.get(`/campaigns/${id}`),
-  updateStatus: (id, status) => api.patch(`/campaigns/${id}/status?status=${status}`),
-};
-
-// Legacy Requests API (for compatibility)
-export const requestsAPI = {
-  create: (data) => campaignsAPI.create(data),
-  getSent: () => campaignsAPI.getSent(),
-  getById: (id) => campaignsAPI.getById(id),
-  updateStatus: (id, status) => campaignsAPI.updateStatus(id, status),
+  confirm: (id) => api.patch(`/campaigns/${id}/confirm`),
+  // Legacy
+  getSent: () => api.get('/campaigns/my/list'),
+  updateStatus: (id, status) => api.patch(`/campaigns/${id}/confirm`),
 };
 
 // Messages API
@@ -122,10 +142,15 @@ export const messagesAPI = {
 
 // Payments API
 export const paymentsAPI = {
-  createUnlockOrder: () => api.post('/payments/create-unlock-order'),
-  verifyUnlockPayment: (data) => api.post('/payments/verify-unlock-payment', data),
-  createEscrowOrder: (campaignId) => api.post(`/payments/create-escrow-order?campaign_id=${campaignId}`),
-  verifyEscrowPayment: (campaignId, data) => api.post(`/payments/verify-escrow-payment?campaign_id=${campaignId}`, data),
+  // Credits
+  getCredits: () => api.get('/payments/credits'),
+  createUnlockOrder: () => api.post('/payments/unlock-pack/order'),
+  verifyUnlockPayment: (data) => api.post('/payments/unlock-pack/verify', data),
+  addDemoCredits: () => api.post('/payments/unlock-pack/demo'),
+  // Escrow
+  createEscrowOrder: (campaignId) => api.post(`/payments/escrow/${campaignId}/order`),
+  verifyEscrowPayment: (campaignId, data) => api.post(`/payments/escrow/${campaignId}/verify`, data),
+  demoEscrowPayment: (campaignId) => api.post(`/payments/escrow/${campaignId}/demo`),
 };
 
 // Admin API
