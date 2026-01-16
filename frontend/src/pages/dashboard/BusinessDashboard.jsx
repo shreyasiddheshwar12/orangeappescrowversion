@@ -509,10 +509,10 @@ const BusinessDashboard = () => {
             <div className="space-y-6 pt-4">
               <div className="text-center">
                 <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-4xl">
-                  {selectedCreator.displayName?.[0]}
+                  {selectedCreator.niches?.[0]?.[0] || '🍊'}
                 </div>
-                <h3 className="font-heading text-xl font-bold">{selectedCreator.displayName}</h3>
-                <p className="text-muted-foreground">{selectedCreator.city}</p>
+                <h3 className="font-heading text-xl font-bold">Creator Profile</h3>
+                <p className="text-muted-foreground">{selectedCreator.location}</p>
                 <div className="flex justify-center gap-2 mt-2">
                   {selectedCreator.niches?.slice(0, 2).map(niche => (
                     <Badge key={niche} variant="secondary">{niche}</Badge>
@@ -548,7 +548,7 @@ const BusinessDashboard = () => {
               {unlockCredits.availableCredits > 0 ? (
                 <Button onClick={handleUnlockCreator} className="w-full btn-primary">
                   <Unlock className="w-4 h-4 mr-2" />
-                  Unlock {selectedCreator.displayName}
+                  Unlock Creator Profile
                 </Button>
               ) : (
                 <div className="space-y-3">
@@ -581,14 +581,14 @@ const CreatorDiscoveryCard = ({ creator, index, onClick }) => {
       <div className="aspect-[3/4] relative">
         {/* Blurred/Placeholder Background */}
         <div className="w-full h-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center">
-          {creator.previewImages?.[0] ? (
+          {creator.previewContent?.[0] ? (
             <img 
-              src={creator.previewImages[0]} 
+              src={creator.previewContent[0]} 
               alt=""
               className={`w-full h-full object-cover ${!creator.isUnlocked ? 'blur-sm' : ''} group-hover:scale-105 transition-transform duration-300`}
             />
           ) : (
-            <span className="text-6xl">{creator.displayName?.[0]}</span>
+            <span className="text-6xl">{creator.niches?.[0]?.[0] || '🍊'}</span>
           )}
         </div>
         
@@ -630,22 +630,24 @@ const CreatorDiscoveryCard = ({ creator, index, onClick }) => {
 
         {/* Info */}
         <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-          <h3 className="font-heading font-bold text-lg mb-1">{creator.displayName}</h3>
+          <h3 className="font-heading font-bold text-lg mb-1">
+            {creator.isUnlocked ? 'View Profile' : 'Creator'}
+          </h3>
           <div className="flex items-center gap-3 text-sm opacity-90">
             <div className="flex items-center gap-1">
               <Users className="w-4 h-4" />
               {creator.followersDisplay}
             </div>
-            {creator.city && (
+            {creator.location && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-4 h-4" />
-                {creator.city}
+                {creator.location}
               </div>
             )}
           </div>
           <div className="mt-2 flex items-center gap-3 text-xs opacity-80">
             <span>📊 {creator.engagementRateDisplay}</span>
-            <span>💰 {creator.rateRangeDisplay}</span>
+            <span>💰 {creator.rateRange}</span>
           </div>
         </div>
       </div>
