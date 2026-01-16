@@ -553,17 +553,19 @@ async def verify_instagram(
         simulated_avg_comments
     )
     
-    # Store verification in user record
+    # Store verification in user record (including followers/engagement for use during profile creation)
     await db.users.update_one(
         {"id": current_user["id"]},
         {"$set": {
             "instagramVerified": True,
             "instagramUserId": simulated_user_id,
-            "instagramUsername": username
+            "instagramUsername": username,
+            "instagramFollowers": simulated_followers,
+            "instagramEngagement": engagement_rate
         }}
     )
     
-    # Update profile with Instagram data
+    # Update profile with Instagram data (if profile already exists)
     collection = "creator_profiles" if current_user["role"] == "creator" else "brand_profiles"
     await db[collection].update_one(
         {"userId": current_user["id"]},
