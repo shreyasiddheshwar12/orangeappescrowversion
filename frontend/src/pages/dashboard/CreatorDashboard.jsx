@@ -478,10 +478,20 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
+  // Normalize data - handle both request and campaign objects
+  const displayName = campaign.senderName || campaign.brandName || 'Brand';
+  const displayStatus = campaign.status || campaign.campaignStatus || 'pending';
+  const displayBudget = campaign.proposedBudget || campaign.price || 0;
+  const displayMessage = campaign.message || campaign.brief || '';
+  const displayDeliverables = campaign.deliverables || '';
+  const isRequest = !!campaign.senderName; // It's a request if it has senderName
+
   const statusColors = {
+    pending: 'bg-blue-100 text-blue-800',
     proposed: 'bg-blue-100 text-blue-800',
     accepted: 'bg-green-100 text-green-800',
     declined: 'bg-red-100 text-red-800',
+    expired: 'bg-gray-100 text-gray-800',
     in_progress: 'bg-yellow-100 text-yellow-800',
     delivered: 'bg-purple-100 text-purple-800',
     completed: 'bg-green-100 text-green-800',
@@ -499,33 +509,35 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
       <div className="flex items-start gap-4">
         <Avatar className="w-12 h-12 border-2 border-orange-100">
           <AvatarFallback className="bg-primary/10 text-primary">
-            {campaign.brandName?.[0]}
+            {displayName?.[0] || 'B'}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-semibold">{campaign.brandName || 'Brand'}</h4>
-            <Badge className={statusColors[campaign.campaignStatus]}>
-              {campaign.campaignStatus?.replace('_', ' ')}
+            <h4 className="font-semibold">{displayName}</h4>
+            <Badge className={statusColors[displayStatus] || 'bg-gray-100 text-gray-800'}>
+              {displayStatus?.replace('_', ' ')}
             </Badge>
-            <Badge className={escrowColors[campaign.escrowStatus]}>
-              {campaign.escrowStatus === 'paid' ? '💰 Paid' : 
-               campaign.escrowStatus === 'released' ? '✅ Released' : '⏳ Pending Payment'}
-            </Badge>
+            {!isRequest && campaign.escrowStatus && (
+              <Badge className={escrowColors[campaign.escrowStatus]}>
+                {campaign.escrowStatus === 'paid' ? '💰 Paid' : 
+                 campaign.escrowStatus === 'released' ? '✅ Released' : '⏳ Pending Payment'}
+              </Badge>
+            )}
           </div>
-          <h3 className="font-heading text-lg font-bold mb-2">{campaign.title}</h3>
-          <p className="text-muted-foreground text-sm mb-3">{campaign.brief}</p>
+          {campaign.title && <h3 className="font-heading text-lg font-bold mb-2">{campaign.title}</h3>}
+          <p className="text-muted-foreground text-sm mb-3">{displayMessage}</p>
           
           <div className="flex flex-wrap gap-4 text-sm">
-            {campaign.price > 0 && (
+            {displayBudget > 0 && (
               <div className="flex items-center gap-1 text-primary font-semibold">
                 <DollarSign className="w-4 h-4" />
-                {formatPrice(campaign.price)}
+                {formatPrice(displayBudget)}
               </div>
             )}
-            {campaign.deliverables && (
+            {displayDeliverables && (
               <div className="text-muted-foreground">
-                📦 {campaign.deliverables}
+                📦 {displayDeliverables}
               </div>
             )}
             {campaign.timeline && (
@@ -536,12 +548,17 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
             {campaign.isBarter && (
               <Badge className="bg-accent/50 text-accent-foreground">🤝 Barter Deal</Badge>
             )}
+            {campaign.expiresAt && (
+              <div className="text-muted-foreground text-xs">
+                Expires: {new Date(campaign.expiresAt).toLocaleDateString()}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3 mt-4 pt-4 border-t border-orange-100">
-        {showActions && campaign.campaignStatus === 'proposed' && (
+        {showActions && (displayStatus === 'pending' || displayStatus === 'proposed') && (
           <>
             <Button
               onClick={onAccept}
