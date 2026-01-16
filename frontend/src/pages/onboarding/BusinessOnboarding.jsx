@@ -312,14 +312,68 @@ const BusinessOnboarding = () => {
             className="space-y-6"
           >
             <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">🌐</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Social & Web Presence</h2>
-              <p className="text-muted-foreground">Help creators find and verify your brand</p>
+              <span className="text-5xl mb-4 block">📱</span>
+              <h2 className="font-heading text-2xl font-bold mb-2">Verify Your Instagram</h2>
+              <p className="text-muted-foreground">Connect your brand's Instagram to get verified</p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="website">Website URL</Label>
+                <Label htmlFor="instagram">Instagram Handle *</Label>
+                <div className="relative">
+                  <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="instagram"
+                    placeholder="@yourbrand"
+                    value={formData.instagramHandle}
+                    onChange={(e) => {
+                      const handle = e.target.value;
+                      updateField('instagramHandle', handle);
+                      updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
+                      setInstagramVerified(false);
+                    }}
+                    className="input-orange pl-10"
+                    data-testid="business-instagram-input"
+                    disabled={instagramVerified}
+                  />
+                </div>
+              </div>
+
+              {!instagramVerified ? (
+                <Button
+                  onClick={verifyInstagram}
+                  disabled={verifyingInstagram || !formData.instagramHandle}
+                  className="w-full btn-primary"
+                  data-testid="verify-instagram-btn"
+                >
+                  {verifyingInstagram ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
+                  ) : (
+                    <><Instagram className="w-4 h-4 mr-2" /> Verify Instagram (Demo)</>
+                  )}
+                </Button>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                      <Check className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-800">Instagram Verified! ✓</p>
+                      <p className="text-sm text-green-600">Your brand is now verified</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-muted/50 rounded-xl p-4">
+                <p className="text-xs text-muted-foreground">
+                  💡 This is a <strong>demo verification</strong>. In production, this would connect to Instagram OAuth.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="website">Website URL (Optional)</Label>
                 <div className="relative">
                   <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -332,30 +386,101 @@ const BusinessOnboarding = () => {
                   />
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Handle</Label>
-                <div className="relative">
-                  <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="instagram"
-                    placeholder="@yourbrand"
-                    value={formData.instagramHandle}
-                    onChange={(e) => {
-                      const handle = e.target.value;
-                      updateField('instagramHandle', handle);
-                      updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
-                    }}
-                    className="input-orange pl-10"
-                    data-testid="business-instagram-input"
-                  />
-                </div>
-              </div>
             </div>
           </motion.div>
         );
 
       case 3:
+        return (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-6"
+          >
+            <div className="text-center mb-8">
+              <span className="text-5xl mb-4 block">🤝</span>
+              <h2 className="font-heading text-2xl font-bold mb-2">Past Collaborations</h2>
+              <p className="text-muted-foreground">Share your influencer marketing history (optional)</p>
+            </div>
+
+            <div className="space-y-4">
+              {formData.pastCollaborations.map((collab, index) => (
+                <div key={index} className="card-orange p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Badge variant="secondary">Collab #{index + 1}</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removePastCollab(index)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  
+                  <Input
+                    placeholder="Campaign Name (e.g., Summer Launch 2024)"
+                    value={collab.campaignName}
+                    onChange={(e) => updatePastCollab(index, 'campaignName', e.target.value)}
+                    className="input-orange"
+                  />
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <select
+                      value={collab.creatorNiche}
+                      onChange={(e) => updatePastCollab(index, 'creatorNiche', e.target.value)}
+                      className="input-orange rounded-xl px-3 py-2"
+                    >
+                      <option value="">Creator Niche</option>
+                      {NICHES.map(niche => (
+                        <option key={niche} value={niche}>{niche}</option>
+                      ))}
+                    </select>
+                    
+                    <select
+                      value={collab.platform}
+                      onChange={(e) => updatePastCollab(index, 'platform', e.target.value)}
+                      className="input-orange rounded-xl px-3 py-2"
+                    >
+                      <option value="Instagram">Instagram</option>
+                      <option value="YouTube">YouTube</option>
+                      <option value="TikTok">TikTok</option>
+                      <option value="Twitter">Twitter</option>
+                    </select>
+                  </div>
+                  
+                  <Input
+                    placeholder="Link to campaign (optional)"
+                    value={collab.link}
+                    onChange={(e) => updatePastCollab(index, 'link', e.target.value)}
+                    className="input-orange"
+                  />
+                </div>
+              ))}
+              
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addPastCollab}
+                className="w-full rounded-xl border-dashed"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Past Collaboration
+              </Button>
+              
+              {formData.pastCollaborations.length === 0 && (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Briefcase className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No past collaborations added yet</p>
+                  <p className="text-sm">This helps creators trust your brand</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        );
+
+      case 4:
         return (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
