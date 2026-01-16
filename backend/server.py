@@ -524,6 +524,11 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         instagramVerified=current_user.get("instagramVerified", False)
     )
 
+@auth_router.post("/logout")
+async def logout():
+    """Logout endpoint - client should clear tokens"""
+    return {"message": "Logged out successfully", "success": True}
+
 # ============== INSTAGRAM VERIFICATION (SIMULATED FOR DEMO) ==============
 
 @api_router.post("/instagram/verify", response_model=InstagramVerifyResponse)
