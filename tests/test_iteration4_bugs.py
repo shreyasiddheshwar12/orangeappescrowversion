@@ -15,7 +15,7 @@ import requests
 import os
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://creator-market-43.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://collab-hub-90.preview.emergentagent.com')
 
 # Test credentials
 BRAND_EMAIL = "brand1@orange.com"
