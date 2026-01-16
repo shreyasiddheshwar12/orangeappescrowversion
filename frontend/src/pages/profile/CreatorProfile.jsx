@@ -44,34 +44,20 @@ const CreatorProfile = () => {
 
   const loadCreator = async () => {
     try {
-      // Try to get full access first
-      try {
-        const response = await marketplaceAPI.getFullCreator(id);
-        setCreator(response.data);
-        setAccessLevel('full');
-        setLoading(false);
-        return;
-      } catch (e) {
-        // Not full access
+      // Try to get unlocked/full access
+      const response = await marketplaceAPI.getUnlockedCreator(id);
+      setCreator(response.data);
+      // Check if identity is unlocked (via campaign) or just context unlocked
+      // For now, we assume context unlock (full access comes from campaign)
+      setAccessLevel('unlocked');
+    } catch (e) {
+      if (e.response?.status === 403) {
+        toast.error("Please unlock this creator first");
+        navigate('/dashboard/business');
+      } else {
+        toast.error("Creator not found");
+        navigate(-1);
       }
-
-      // Try unlocked access
-      try {
-        const response = await marketplaceAPI.getUnlockedCreator(id);
-        setCreator(response.data);
-        setAccessLevel('unlocked');
-        setLoading(false);
-        return;
-      } catch (e) {
-        // Not unlocked
-      }
-
-      // Fall back to discovery (handled by redirect or error)
-      toast.error("Please unlock this creator first");
-      navigate('/dashboard/business');
-    } catch (error) {
-      toast.error("Creator not found");
-      navigate(-1);
     } finally {
       setLoading(false);
     }
@@ -127,7 +113,11 @@ const CreatorProfile = () => {
   }
 
   const canSendCampaign = user && user.role === 'business' && accessLevel !== 'discovery';
-  const canSeeInstagram = accessLevel === 'full';
+  const canSeeInstagram = accessLevel === 'full' && creator?.instagramUsername;
+
+  // For unlocked profiles, show the bio as the name since identity is still hidden
+  const displayName = creator?.name || 'Creator';
+  const displayLocation = creator?.location || creator?.city || '';
 
   return (
     <div className="min-h-screen bg-background">
@@ -150,7 +140,7 @@ const CreatorProfile = () => {
             {accessLevel === 'full' ? (
               <><Unlock className="w-3 h-3 mr-1" /> Full Access</>
             ) : (
-              <><Unlock className="w-3 h-3 mr-1" /> Unlocked</>
+              <><Unlock className="w-3 h-3 mr-1" /> Context Unlocked</>
             )}
           </Badge>
         </div>
@@ -172,14 +162,14 @@ const CreatorProfile = () => {
                     {creator?.name?.[0]}
                   </AvatarFallback>
                 </Avatar>
-                <h1 className="font-heading text-2xl font-bold mb-2">{creator?.name}</h1>
+                <h1 className="font-heading text-2xl font-bold mb-2">{displayName}</h1>
                 <p className="text-muted-foreground mb-4">{creator?.bio}</p>
                 
                 <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground mb-4">
-                  {creator?.city && (
+                  {displayLocation && (
                     <div className="flex items-center gap-1">
                       <MapPin className="w-4 h-4" />
-                      {creator.city}
+                      {displayLocation}
                     </div>
                   )}
                   <div className="flex items-center gap-1">
