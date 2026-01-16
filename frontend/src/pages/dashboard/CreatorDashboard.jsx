@@ -21,12 +21,26 @@ const CreatorDashboard = () => {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingBrands, setLoadingBrands] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [activeTab, setActiveTab] = useState('campaigns');
+  const [brandFilters, setBrandFilters] = useState({
+    industry: '',
+    location: '',
+    openToBarter: false
+  });
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'brands') {
+      loadBrands();
+    }
+  }, [activeTab, brandFilters]);
 
   const loadData = async () => {
     try {
@@ -44,6 +58,18 @@ const CreatorDashboard = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadBrands = async () => {
+    setLoadingBrands(true);
+    try {
+      const response = await marketplaceAPI.discoverBrands(brandFilters);
+      setBrands(response.data);
+    } catch (error) {
+      toast.error("Failed to load brands");
+    } finally {
+      setLoadingBrands(false);
     }
   };
 
