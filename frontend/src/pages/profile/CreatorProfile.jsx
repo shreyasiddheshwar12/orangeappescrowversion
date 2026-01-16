@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Instagram, MapPin, Users, ArrowLeft, Send, DollarSign, 
-  ExternalLink, Loader2, Image as ImageIcon, Play
+  ExternalLink, Loader2, Image as ImageIcon, Play, Lock, Unlock, CreditCard
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -12,7 +12,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
-import { marketplaceAPI, requestsAPI } from '../../lib/api';
+import { Switch } from '../../components/ui/switch';
+import { marketplaceAPI, campaignsAPI, paymentsAPI, businessAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -22,16 +23,19 @@ const CreatorProfile = () => {
   const { user } = useAuth();
   const [creator, setCreator] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showRequestDialog, setShowRequestDialog] = useState(false);
-  const [sendingRequest, setSendingRequest] = useState(false);
+  const [showCampaignDialog, setShowCampaignDialog] = useState(false);
+  const [sendingCampaign, setSendingCampaign] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState(null);
+  const [accessLevel, setAccessLevel] = useState('discovery'); // discovery, unlocked, full
   
-  const [requestForm, setRequestForm] = useState({
+  const [campaignForm, setCampaignForm] = useState({
     title: '',
     brief: '',
-    offerAmount: '',
+    price: '',
     deliverables: '',
-    timeline: ''
+    timeline: '',
+    isBarter: false,
+    barterDetails: ''
   });
 
   useEffect(() => {
@@ -40,8 +44,31 @@ const CreatorProfile = () => {
 
   const loadCreator = async () => {
     try {
-      const response = await marketplaceAPI.getCreatorById(id);
-      setCreator(response.data);
+      // Try to get full access first
+      try {
+        const response = await marketplaceAPI.getFullCreator(id);
+        setCreator(response.data);
+        setAccessLevel('full');
+        setLoading(false);
+        return;
+      } catch (e) {
+        // Not full access
+      }
+
+      // Try unlocked access
+      try {
+        const response = await marketplaceAPI.getUnlockedCreator(id);
+        setCreator(response.data);
+        setAccessLevel('unlocked');
+        setLoading(false);
+        return;
+      } catch (e) {
+        // Not unlocked
+      }
+
+      // Fall back to discovery (handled by redirect or error)
+      toast.error("Please unlock this creator first");
+      navigate('/dashboard/business');
     } catch (error) {
       toast.error("Creator not found");
       navigate(-1);
@@ -50,29 +77,31 @@ const CreatorProfile = () => {
     }
   };
 
-  const handleSendRequest = async () => {
-    if (!requestForm.title || !requestForm.brief) {
+  const handleSendCampaign = async () => {
+    if (!campaignForm.title || !campaignForm.brief) {
       toast.error("Please fill in title and brief");
       return;
     }
 
-    setSendingRequest(true);
+    setSendingCampaign(true);
     try {
-      await requestsAPI.create({
+      await campaignsAPI.create({
         creatorId: id,
-        title: requestForm.title,
-        brief: requestForm.brief,
-        offerAmount: parseFloat(requestForm.offerAmount) || 0,
-        deliverables: requestForm.deliverables,
-        timeline: requestForm.timeline
+        title: campaignForm.title,
+        brief: campaignForm.brief,
+        price: parseFloat(campaignForm.price) || 0,
+        deliverables: campaignForm.deliverables,
+        timeline: campaignForm.timeline,
+        isBarter: campaignForm.isBarter,
+        barterDetails: campaignForm.barterDetails
       });
-      toast.success("Request sent! Time to make magic together ✨");
-      setShowRequestDialog(false);
-      setRequestForm({ title: '', brief: '', offerAmount: '', deliverables: '', timeline: '' });
+      toast.success("Campaign sent! Time to make magic together ✨");
+      setShowCampaignDialog(false);
+      setCampaignForm({ title: '', brief: '', price: '', deliverables: '', timeline: '', isBarter: false, barterDetails: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to send request");
+      toast.error(error.response?.data?.detail || "Failed to send campaign");
     } finally {
-      setSendingRequest(false);
+      setSendingCampaign(false);
     }
   };
 
@@ -97,7 +126,8 @@ const CreatorProfile = () => {
     );
   }
 
-  const canSendRequest = user && user.role === 'business';
+  const canSendCampaign = user && user.role === 'business' && accessLevel !== 'discovery';
+  const canSeeInstagram = accessLevel === 'full';
 
   return (
     <div className="min-h-screen bg-background">
@@ -114,17 +144,15 @@ const CreatorProfile = () => {
             </div>
             <span className="font-heading font-bold">Orange</span>
           </div>
-          {creator?.instagramUrl && (
-            <Button
-              variant="outline"
-              className="rounded-full"
-              onClick={() => window.open(creator.instagramUrl, '_blank')}
-              data-testid="instagram-btn"
-            >
-              <Instagram className="w-4 h-4 mr-2" />
-              Instagram
-            </Button>
-          )}
+          
+          {/* Access Level Badge */}
+          <Badge className={accessLevel === 'full' ? 'bg-green-500 text-white' : 'bg-primary text-white'}>
+            {accessLevel === 'full' ? (
+              <><Unlock className="w-3 h-3 mr-1" /> Full Access</>
+            ) : (
+              <><Unlock className="w-3 h-3 mr-1" /> Unlocked</>
+            )}
+          </Badge>
         </div>
       </header>
 
@@ -148,10 +176,10 @@ const CreatorProfile = () => {
                 <p className="text-muted-foreground mb-4">{creator?.bio}</p>
                 
                 <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground mb-4">
-                  {creator?.location && (
+                  {creator?.city && (
                     <div className="flex items-center gap-1">
                       <MapPin className="w-4 h-4" />
-                      {creator.location}
+                      {creator.city}
                     </div>
                   )}
                   <div className="flex items-center gap-1">
@@ -159,6 +187,14 @@ const CreatorProfile = () => {
                     {formatFollowers(creator?.followersCount || 0)}
                   </div>
                 </div>
+
+                {/* Engagement Rate */}
+                {creator?.engagementRate && (
+                  <div className="bg-accent/20 rounded-xl p-3 mb-4">
+                    <p className="text-sm text-muted-foreground">Engagement Rate</p>
+                    <p className="text-2xl font-bold text-primary">{creator.engagementRate.toFixed(2)}%</p>
+                  </div>
+                )}
 
                 {/* Niches */}
                 <div className="flex flex-wrap justify-center gap-2 mb-4">
@@ -201,29 +237,38 @@ const CreatorProfile = () => {
 
               {/* Actions */}
               <div className="space-y-3">
-                {creator?.instagramUrl && (
+                {/* Instagram - Only visible after escrow */}
+                {canSeeInstagram && creator?.instagramUrl ? (
                   <Button
                     variant="outline"
                     className="w-full rounded-full"
                     onClick={() => window.open(creator.instagramUrl, '_blank')}
+                    data-testid="instagram-btn"
                   >
                     <Instagram className="w-4 h-4 mr-2" />
-                    Go to Instagram
+                    {creator.instagramHandle || 'Go to Instagram'}
                   </Button>
+                ) : (
+                  <div className="bg-muted/50 rounded-full p-3 text-center">
+                    <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      Instagram unlocks after campaign payment
+                    </p>
+                  </div>
                 )}
                 
-                {canSendRequest && (
-                  <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+                {canSendCampaign && (
+                  <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
                     <DialogTrigger asChild>
-                      <Button className="w-full btn-primary" data-testid="send-request-btn">
+                      <Button className="w-full btn-primary" data-testid="send-campaign-btn">
                         <Send className="w-4 h-4 mr-2" />
-                        Send Collab Request
+                        Send Campaign Proposal
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="sm:max-w-[500px]">
                       <DialogHeader>
                         <DialogTitle className="font-heading text-xl">
-                          Send Request to {creator?.name} 🍊
+                          Send Campaign to {creator?.name} 🍊
                         </DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4 pt-4">
@@ -231,67 +276,96 @@ const CreatorProfile = () => {
                           <Label>Campaign Title *</Label>
                           <Input
                             placeholder="Summer Collection 2024"
-                            value={requestForm.title}
-                            onChange={(e) => setRequestForm(prev => ({ ...prev, title: e.target.value }))}
+                            value={campaignForm.title}
+                            onChange={(e) => setCampaignForm(prev => ({ ...prev, title: e.target.value }))}
                             className="input-orange"
-                            data-testid="request-title-input"
+                            data-testid="campaign-title-input"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label>Brief *</Label>
                           <Textarea
-                            placeholder="Tell them about your campaign, what you're looking for..."
-                            value={requestForm.brief}
-                            onChange={(e) => setRequestForm(prev => ({ ...prev, brief: e.target.value }))}
+                            placeholder="Tell them about your campaign..."
+                            value={campaignForm.brief}
+                            onChange={(e) => setCampaignForm(prev => ({ ...prev, brief: e.target.value }))}
                             className="input-orange min-h-[100px]"
-                            data-testid="request-brief-input"
+                            data-testid="campaign-brief-input"
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Offer Amount (₹)</Label>
-                            <Input
-                              type="number"
-                              placeholder="15000"
-                              value={requestForm.offerAmount}
-                              onChange={(e) => setRequestForm(prev => ({ ...prev, offerAmount: e.target.value }))}
-                              className="input-orange"
-                              data-testid="request-amount-input"
-                            />
+                        
+                        {/* Barter Toggle */}
+                        <div className="flex items-center justify-between p-4 bg-accent/20 rounded-xl">
+                          <div>
+                            <p className="font-semibold">Barter Deal 🤝</p>
+                            <p className="text-sm text-muted-foreground">Product exchange instead of cash</p>
                           </div>
-                          <div className="space-y-2">
-                            <Label>Timeline</Label>
-                            <Input
-                              placeholder="2 weeks"
-                              value={requestForm.timeline}
-                              onChange={(e) => setRequestForm(prev => ({ ...prev, timeline: e.target.value }))}
-                              className="input-orange"
-                              data-testid="request-timeline-input"
-                            />
-                          </div>
+                          <Switch
+                            checked={campaignForm.isBarter}
+                            onCheckedChange={(checked) => setCampaignForm(prev => ({ ...prev, isBarter: checked }))}
+                            data-testid="barter-toggle"
+                          />
                         </div>
+
+                        {campaignForm.isBarter ? (
+                          <div className="space-y-2">
+                            <Label>Barter Details</Label>
+                            <Textarea
+                              placeholder="What products/services will you provide?"
+                              value={campaignForm.barterDetails}
+                              onChange={(e) => setCampaignForm(prev => ({ ...prev, barterDetails: e.target.value }))}
+                              className="input-orange"
+                              data-testid="barter-details-input"
+                            />
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Budget (₹)</Label>
+                              <Input
+                                type="number"
+                                placeholder="15000"
+                                value={campaignForm.price}
+                                onChange={(e) => setCampaignForm(prev => ({ ...prev, price: e.target.value }))}
+                                className="input-orange"
+                                data-testid="campaign-price-input"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Timeline</Label>
+                              <Input
+                                placeholder="2 weeks"
+                                value={campaignForm.timeline}
+                                onChange={(e) => setCampaignForm(prev => ({ ...prev, timeline: e.target.value }))}
+                                className="input-orange"
+                                data-testid="campaign-timeline-input"
+                              />
+                            </div>
+                          </div>
+                        )}
+                        
                         <div className="space-y-2">
                           <Label>Deliverables</Label>
                           <Input
                             placeholder="3 Reels, 5 Stories"
-                            value={requestForm.deliverables}
-                            onChange={(e) => setRequestForm(prev => ({ ...prev, deliverables: e.target.value }))}
+                            value={campaignForm.deliverables}
+                            onChange={(e) => setCampaignForm(prev => ({ ...prev, deliverables: e.target.value }))}
                             className="input-orange"
-                            data-testid="request-deliverables-input"
+                            data-testid="campaign-deliverables-input"
                           />
                         </div>
+                        
                         <Button
-                          onClick={handleSendRequest}
-                          disabled={sendingRequest}
+                          onClick={handleSendCampaign}
+                          disabled={sendingCampaign}
                           className="w-full btn-primary"
-                          data-testid="submit-request-btn"
+                          data-testid="submit-campaign-btn"
                         >
-                          {sendingRequest ? (
+                          {sendingCampaign ? (
                             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                           ) : (
                             <Send className="w-4 h-4 mr-2" />
                           )}
-                          Send Request
+                          Send Proposal
                         </Button>
                       </div>
                     </DialogContent>
