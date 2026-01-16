@@ -604,9 +604,9 @@ async def create_creator_profile(profile: CreatorProfileCreate, current_user: di
     instagram_user_id = user_record.get("instagramUserId") or (existing.get("instagramUserId") if existing else None)
     instagram_username = user_record.get("instagramUsername") or (existing.get("instagramUsername") if existing else None)
     
-    # Use followers/engagement from profile input or existing data
-    followers_count = profile.followersCount or (existing.get("followersCount", 0) if existing else 0)
-    engagement_rate = profile.engagementRate or (existing.get("engagementRate", 0) if existing else 0)
+    # Use followers/engagement from: 1) profile input, 2) user record (from instagram verify), 3) existing profile
+    followers_count = profile.followersCount or user_record.get("instagramFollowers") or (existing.get("followersCount", 0) if existing else 0)
+    engagement_rate = profile.engagementRate or user_record.get("instagramEngagement") or (existing.get("engagementRate", 0) if existing else 0)
     
     profile_doc = {
         "id": profile_id,
