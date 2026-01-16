@@ -226,6 +226,41 @@ const BusinessProfile = () => {
           </div>
         </motion.div>
 
+        {/* Past Collaborations Section (only if unlocked and has collabs) */}
+        {accessLevel === 'unlocked' && brand?.pastCollaborations?.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="card-orange p-6 mb-8"
+          >
+            <h3 className="font-heading text-lg font-bold mb-4 flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-primary" />
+              Past Collaborations ({brand.pastCollaborations.length})
+            </h3>
+            <div className="grid gap-3">
+              {brand.pastCollaborations.map((collab, index) => (
+                <div key={index} className="bg-muted/50 p-4 rounded-xl">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-semibold">{collab.campaignName}</p>
+                      <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                        {collab.creatorNiche && <Badge variant="outline" className="text-xs">{collab.creatorNiche}</Badge>}
+                        {collab.platform && <span>on {collab.platform}</span>}
+                      </div>
+                    </div>
+                    {collab.link && (
+                      <a href={collab.link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm">
+                        View →
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {/* Instagram Access Section (only if full access) */}
         {accessLevel === 'unlocked' && (
           <motion.div
