@@ -63,6 +63,7 @@ export const authAPI = {
   login: (data) => api.post('/auth/login', data),
   logout: () => api.post('/auth/logout'),
   getMe: () => api.get('/auth/me'),
+  // Instagram verification (simulated)
   verifyInstagram: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
 };
 
@@ -79,8 +80,9 @@ export const businessAPI = {
 };
 
 // FREE Marketplace Discovery API
+// Returns PARTIAL data only - no identity (name, Instagram) revealed
 export const marketplaceAPI = {
-  // Discover creators - FREE, partial data
+  // Discover creators - FREE, partial data (no name, no Instagram)
   discoverCreators: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.niche) params.append('niche', filters.niche);
@@ -92,7 +94,7 @@ export const marketplaceAPI = {
     return api.get(`/marketplace/creators?${params.toString()}`);
   },
   
-  // Discover brands - FREE, partial data
+  // Discover brands - FREE, partial data (no brand name, no Instagram)
   discoverBrands: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.industry) params.append('industry', filters.industry);
@@ -103,44 +105,49 @@ export const marketplaceAPI = {
 };
 
 // Campaign API - Core collaboration flow
+// Flow: Create Request -> Accept/Reject -> Pay -> Unlock Identity + Chat -> Submit Content -> Approve -> Complete
 export const campaignAPI = {
-  // Send campaign request
+  // Create a new campaign request (sender initiates)
   create: (data) => api.post('/campaigns/', data),
   
-  // Get incoming campaigns (where user is receiver)
+  // Get campaigns where current user is the RECEIVER (incoming requests)
   getIncoming: () => api.get('/campaigns/incoming'),
   
-  // Get outgoing campaigns (where user is sender)
+  // Get campaigns where current user is the SENDER (sent requests)
   getOutgoing: () => api.get('/campaigns/outgoing'),
   
-  // Get single campaign
+  // Get single campaign details
   getById: (id) => api.get(`/campaigns/${id}`),
   
-  // Accept/Reject campaign
+  // Respond to a campaign request (receiver accepts or rejects)
   respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
   
   // Pay for campaign (unlocks identity + chat)
+  // - Paid collab: Full escrow amount
+  // - Barter collab: Facilitation fee (₹149)
   pay: (id) => api.post(`/campaigns/${id}/pay`),
   
-  // Add shipping details (barter)
+  // Add shipping details for barter collab (brand provides)
   addShipping: (id, details) => api.post(`/campaigns/${id}/shipping?shippingDetails=${encodeURIComponent(details)}`),
   
-  // Confirm product received (barter)
+  // Creator confirms product received (barter collab)
   confirmReceipt: (id) => api.post(`/campaigns/${id}/product-received`),
   
-  // Submit content link
+  // Creator submits content link for review
   submitContent: (id, link) => api.post(`/campaigns/${id}/submit-content?contentLink=${encodeURIComponent(link)}`),
   
-  // Approve content (releases escrow)
+  // Brand approves content (releases escrow for paid collabs)
   approveContent: (id) => api.post(`/campaigns/${id}/approve`),
   
-  // Report issue
+  // Report an issue with a campaign
   report: (id, reason) => api.post(`/campaigns/${id}/report?reason=${encodeURIComponent(reason)}`),
 };
 
-// Messages API - Chat (only after payment)
+// Messages API - Chat (ONLY available after payment unlocks chat)
 export const messagesAPI = {
+  // Get messages for a campaign
   getMessages: (campaignId) => api.get(`/messages/${campaignId}`),
+  // Send a message
   sendMessage: (campaignId, content) => api.post(`/messages/${campaignId}`, { content }),
 };
 
@@ -151,7 +158,7 @@ export const adminAPI = {
   blacklistUser: (userId, reason) => api.post(`/admin/blacklist/${userId}?reason=${encodeURIComponent(reason)}`),
 };
 
-// Seed API (for testing)
+// Seed API (for testing/development)
 export const seedAPI = {
   seed: () => api.post('/seed'),
 };
