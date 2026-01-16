@@ -252,13 +252,13 @@ const CreatorOnboarding = () => {
           >
             <div className="text-center mb-8">
               <span className="text-5xl mb-4 block">📱</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Your Social Presence</h2>
-              <p className="text-muted-foreground">Connect your Instagram & show off those followers</p>
+              <h2 className="font-heading text-2xl font-bold mb-2">Verify Your Instagram</h2>
+              <p className="text-muted-foreground">Connect your Instagram to get verified & shown in marketplace</p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Handle</Label>
+                <Label htmlFor="instagram">Instagram Handle *</Label>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -269,27 +269,67 @@ const CreatorOnboarding = () => {
                       const handle = e.target.value;
                       updateField('instagramHandle', handle);
                       updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
+                      setInstagramVerified(false);
                     }}
                     className="input-orange pl-10"
                     data-testid="creator-instagram-input"
+                    disabled={instagramVerified}
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="followers">Followers Count</Label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="followers"
-                    type="number"
-                    placeholder="50000"
-                    value={formData.followersCount}
-                    onChange={(e) => updateField('followersCount', e.target.value)}
-                    className="input-orange pl-10"
-                    data-testid="creator-followers-input"
-                  />
+              {/* Verification Button */}
+              {!instagramVerified ? (
+                <Button
+                  onClick={async () => {
+                    if (!formData.instagramHandle) {
+                      toast.error("Enter your Instagram handle first");
+                      return;
+                    }
+                    setVerifyingInstagram(true);
+                    try {
+                      const response = await instagramAPI.verify(formData.instagramHandle);
+                      const data = response.data;
+                      updateField('followersCount', data.followersCount.toString());
+                      updateField('engagementRate', data.engagementRate.toString());
+                      setInstagramVerified(true);
+                      toast.success(`Verified! ${data.followersCount.toLocaleString()} followers, ${data.engagementRate}% engagement 🎉`);
+                    } catch (error) {
+                      toast.error("Verification failed. Try again.");
+                    } finally {
+                      setVerifyingInstagram(false);
+                    }
+                  }}
+                  disabled={verifyingInstagram || !formData.instagramHandle}
+                  className="w-full btn-primary"
+                  data-testid="verify-instagram-btn"
+                >
+                  {verifyingInstagram ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
+                  ) : (
+                    <><Instagram className="w-4 h-4 mr-2" /> Verify Instagram (Demo)</>
+                  )}
+                </Button>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                      <Check className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-green-800">Instagram Verified! ✓</p>
+                      <p className="text-sm text-green-600">
+                        {parseInt(formData.followersCount).toLocaleString()} followers • {formData.engagementRate}% engagement
+                      </p>
+                    </div>
+                  </div>
                 </div>
+              )}
+
+              <div className="bg-muted/50 rounded-xl p-4">
+                <p className="text-xs text-muted-foreground">
+                  💡 This is a <strong>demo verification</strong>. In production, this would connect to Instagram OAuth to verify your account ownership and fetch real metrics.
+                </p>
               </div>
 
               <div className="space-y-3">
