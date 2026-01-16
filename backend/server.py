@@ -277,9 +277,7 @@ class BrandUnlocked(BaseModel):
     pastCollabCount: int = 0
     pastCollaborations: List[PastCollaboration] = []
     profilePhotoUrl: str = ""
-    pastCampaigns: List[str]
-    pastCollabCount: int
-    profilePhotoUrl: str
+    pastCampaigns: List[str] = []
     # Hidden: instagramUsername
 
 # Credits
