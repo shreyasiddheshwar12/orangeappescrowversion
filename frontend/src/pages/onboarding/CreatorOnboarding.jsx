@@ -175,7 +175,7 @@ const CreatorOnboarding = () => {
   const canProceed = () => {
     switch (step) {
       case 1: return formData.name && formData.bio;
-      case 2: return true;
+      case 2: return instagramVerified && formData.niches.length > 0;
       case 3: return true;
       case 4: return true;
       case 5: return true;
