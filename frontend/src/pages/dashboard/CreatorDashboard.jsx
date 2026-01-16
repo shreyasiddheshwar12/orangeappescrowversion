@@ -73,23 +73,39 @@ const CreatorDashboard = () => {
     }
   };
 
-  const handleCampaignAction = async (campaignId, newStatus) => {
+  const handleCampaignAction = async (campaignId, newStatus, isRequest = false) => {
     setActionLoading(campaignId);
     try {
-      await campaignsAPI.updateStatus(campaignId, newStatus);
-      setCampaigns(prev => prev.map(c => 
-        c.id === campaignId ? { ...c, campaignStatus: newStatus } : c
-      ));
+      if (isRequest) {
+        // Handle collab request response (accept/decline)
+        const action = newStatus === 'accepted' ? 'accept' : 'decline';
+        await requestsAPI.respond(campaignId, action);
+        
+        // Update local state
+        setCampaigns(prev => prev.map(c => 
+          c.id === campaignId ? { ...c, status: newStatus } : c
+        ));
+      } else {
+        // Handle campaign status update
+        await campaignsAPI.updateStatus(campaignId, newStatus);
+        setCampaigns(prev => prev.map(c => 
+          c.id === campaignId ? { ...c, campaignStatus: newStatus } : c
+        ));
+      }
       
       if (newStatus === 'accepted') {
-        toast.success("Campaign accepted! Time to make magic ✨");
+        toast.success("Request accepted! 🎉 Brand has been notified.");
       } else if (newStatus === 'declined') {
-        toast.success("Campaign declined");
+        toast.success("Request declined. Brand's credit will be refunded.");
       } else if (newStatus === 'delivered') {
         toast.success("Marked as delivered! Waiting for brand approval 🎉");
       }
+      
+      // Reload requests to get updated data
+      const requestsRes = await creatorAPI.getRequests();
+      setCampaigns(requestsRes.data);
     } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to update campaign"));
+      toast.error(getErrorMessage(error, "Failed to update"));
     } finally {
       setActionLoading(null);
     }
