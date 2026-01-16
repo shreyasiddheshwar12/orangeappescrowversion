@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Instagram, Globe, MapPin, Edit, LogOut, MessageSquare, Send,
-  ExternalLink, Search, Filter, X, Users, DollarSign, Loader2
+  Instagram, Globe, MapPin, Edit, LogOut, MessageSquare, Send, Unlock, CreditCard,
+  ExternalLink, Search, Filter, X, Users, DollarSign, Loader2, Lock, Eye, Sparkles
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -15,7 +15,8 @@ import { Switch } from '../../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '../../components/ui/sheet';
-import { businessAPI, marketplaceAPI, requestsAPI } from '../../lib/api';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { businessAPI, marketplaceAPI, campaignsAPI, paymentsAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -30,9 +31,13 @@ const BusinessDashboard = () => {
   const { logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [creators, setCreators] = useState([]);
-  const [sentRequests, setSentRequests] = useState([]);
+  const [sentCampaigns, setSentCampaigns] = useState([]);
+  const [unlockCredits, setUnlockCredits] = useState({ availableCredits: 0 });
   const [loading, setLoading] = useState(true);
   const [creatorsLoading, setCreatorsLoading] = useState(false);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [selectedCreator, setSelectedCreator] = useState(null);
+  const [buyingCredits, setBuyingCredits] = useState(false);
   
   // Filters
   const [filters, setFilters] = useState({
@@ -47,13 +52,17 @@ const BusinessDashboard = () => {
   useEffect(() => {
     loadProfile();
     loadCreators();
-    loadSentRequests();
+    loadSentCampaigns();
   }, []);
 
   const loadProfile = async () => {
     try {
-      const response = await businessAPI.getProfile();
-      setProfile(response.data);
+      const [profileRes, creditsRes] = await Promise.all([
+        businessAPI.getProfile(),
+        businessAPI.getUnlockCredits()
+      ]);
+      setProfile(profileRes.data);
+      setUnlockCredits(creditsRes.data);
     } catch (error) {
       if (error.response?.status === 404) {
         navigate('/onboarding/business');
@@ -71,7 +80,7 @@ const BusinessDashboard = () => {
       if (customFilters.location) params.location = customFilters.location;
       if (customFilters.openToBarter) params.openToBarter = true;
       
-      const response = await marketplaceAPI.getCreators(params);
+      const response = await marketplaceAPI.discoverCreators(params);
       setCreators(response.data);
     } catch (error) {
       toast.error("Failed to load creators");
@@ -81,12 +90,12 @@ const BusinessDashboard = () => {
     }
   };
 
-  const loadSentRequests = async () => {
+  const loadSentCampaigns = async () => {
     try {
-      const response = await requestsAPI.getSent();
-      setSentRequests(response.data);
+      const response = await campaignsAPI.getSent();
+      setSentCampaigns(response.data);
     } catch (error) {
-      console.error("Failed to load sent requests");
+      console.error("Failed to load sent campaigns");
     }
   };
 
@@ -105,6 +114,90 @@ const BusinessDashboard = () => {
     };
     setFilters(defaultFilters);
     loadCreators(defaultFilters);
+  };
+
+  const handleCreatorClick = (creator) => {
+    if (creator.isUnlocked) {
+      navigate(`/profile/creator/${creator.id}`);
+    } else {
+      setSelectedCreator(creator);
+      setShowUnlockModal(true);
+    }
+  };
+
+  const handleUnlockCreator = async () => {
+    if (!selectedCreator) return;
+    
+    if (unlockCredits.availableCredits <= 0) {
+      toast.error("No unlock credits! Purchase a pack first.");
+      return;
+    }
+
+    try {
+      await marketplaceAPI.unlockCreator(selectedCreator.id);
+      toast.success("Creator unlocked! 🔓");
+      setShowUnlockModal(false);
+      
+      // Refresh credits and creators
+      const creditsRes = await businessAPI.getUnlockCredits();
+      setUnlockCredits(creditsRes.data);
+      loadCreators();
+      
+      // Navigate to unlocked profile
+      navigate(`/profile/creator/${selectedCreator.id}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Failed to unlock creator");
+    }
+  };
+
+  const handleBuyCredits = async () => {
+    setBuyingCredits(true);
+    try {
+      const orderRes = await paymentsAPI.createUnlockOrder();
+      const { orderId, amount, keyId } = orderRes.data;
+      
+      if (!keyId) {
+        toast.error("Payment not configured. Contact admin.");
+        setBuyingCredits(false);
+        return;
+      }
+
+      const options = {
+        key: keyId,
+        amount: amount,
+        currency: "INR",
+        name: "Orange",
+        description: "5 Creator Unlock Credits",
+        order_id: orderId,
+        handler: async (response) => {
+          try {
+            await paymentsAPI.verifyUnlockPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature
+            });
+            toast.success("Payment successful! 5 credits added 🎉");
+            const creditsRes = await businessAPI.getUnlockCredits();
+            setUnlockCredits(creditsRes.data);
+          } catch (err) {
+            toast.error("Payment verification failed");
+          }
+        },
+        prefill: {
+          email: profile?.email || ""
+        },
+        theme: {
+          color: "#FF6B00"
+        }
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      toast.error("Failed to create payment order");
+    } finally {
+      setBuyingCredits(false);
+    }
   };
 
   const handleLogout = () => {
@@ -144,7 +237,23 @@ const BusinessDashboard = () => {
             </div>
             <span className="font-heading font-bold text-xl">Orange</span>
           </div>
-          <div className="flex items-center gap-3">
+          
+          {/* Unlock Credits Badge */}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-accent/20 px-4 py-2 rounded-full">
+              <Unlock className="w-4 h-4 text-primary" />
+              <span className="font-semibold">{unlockCredits.availableCredits} Credits</span>
+              <Button 
+                size="sm" 
+                className="ml-2 bg-primary hover:bg-primary/90 rounded-full h-7 px-3"
+                onClick={handleBuyCredits}
+                disabled={buyingCredits}
+                data-testid="buy-credits-btn"
+              >
+                {buyingCredits ? <Loader2 className="w-3 h-3 animate-spin" /> : '+'}
+              </Button>
+            </div>
+            
             <Button
               variant="outline"
               className="rounded-full"
@@ -194,20 +303,6 @@ const BusinessDashboard = () => {
                     {profile.location}
                   </div>
                 )}
-                {profile?.websiteUrl && (
-                  <a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer" 
-                     className="flex items-center gap-1 hover:text-primary transition-colors">
-                    <Globe className="w-4 h-4" />
-                    Website
-                  </a>
-                )}
-                {profile?.instagramUrl && (
-                  <a href={profile.instagramUrl} target="_blank" rel="noopener noreferrer"
-                     className="flex items-center gap-1 hover:text-primary transition-colors">
-                    <Instagram className="w-4 h-4" />
-                    Instagram
-                  </a>
-                )}
               </div>
             </div>
             <Button
@@ -222,14 +317,40 @@ const BusinessDashboard = () => {
           </div>
         </motion.div>
 
+        {/* Credits Info Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-gradient-to-r from-primary/10 to-accent/10 rounded-3xl p-6 mb-8"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-primary rounded-2xl flex items-center justify-center">
+                <CreditCard className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="font-heading font-bold text-lg">Unlock Creators</h3>
+                <p className="text-muted-foreground text-sm">
+                  ₹200 = 5 credits • 1 credit = 1 creator unlock • Valid for 7 days
+                </p>
+              </div>
+            </div>
+            <Button onClick={handleBuyCredits} className="btn-primary" disabled={buyingCredits}>
+              {buyingCredits ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Buy Unlock Pack - ₹200
+            </Button>
+          </div>
+        </motion.div>
+
         {/* Tabs */}
         <Tabs defaultValue="marketplace" className="w-full">
           <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
             <TabsTrigger value="marketplace" className="rounded-full data-[state=active]:bg-white px-6">
               🍊 Creator Marketplace
             </TabsTrigger>
-            <TabsTrigger value="requests" className="rounded-full data-[state=active]:bg-white px-6">
-              📤 Sent Requests ({sentRequests.length})
+            <TabsTrigger value="campaigns" className="rounded-full data-[state=active]:bg-white px-6">
+              📤 My Campaigns ({sentCampaigns.length})
             </TabsTrigger>
           </TabsList>
 
@@ -246,9 +367,6 @@ const BusinessDashboard = () => {
                   <Button variant="outline" className="rounded-full" data-testid="open-filters-btn">
                     <Filter className="w-4 h-4 mr-2" />
                     Filters
-                    {(filters.niche || filters.location || filters.openToBarter || filters.minFollowers > 0 || filters.maxFollowers < 1000000) && (
-                      <Badge className="ml-2 bg-primary text-white">Active</Badge>
-                    )}
                   </Button>
                 </SheetTrigger>
                 <SheetContent className="w-[400px]">
@@ -257,11 +375,10 @@ const BusinessDashboard = () => {
                   </SheetHeader>
                   
                   <div className="space-y-6 mt-6">
-                    {/* Niche Filter */}
                     <div className="space-y-2">
                       <Label>Niche</Label>
                       <Select value={filters.niche} onValueChange={(value) => setFilters(prev => ({ ...prev, niche: value }))}>
-                        <SelectTrigger className="rounded-xl" data-testid="filter-niche-select">
+                        <SelectTrigger className="rounded-xl">
                           <SelectValue placeholder="All niches" />
                         </SelectTrigger>
                         <SelectContent>
@@ -272,27 +389,21 @@ const BusinessDashboard = () => {
                       </Select>
                     </div>
 
-                    {/* Followers Range */}
                     <div className="space-y-4">
                       <Label>Followers Range</Label>
-                      <div className="px-2">
-                        <Slider
-                          value={[filters.minFollowers, filters.maxFollowers]}
-                          onValueChange={([min, max]) => setFilters(prev => ({ ...prev, minFollowers: min, maxFollowers: max }))}
-                          min={0}
-                          max={1000000}
-                          step={1000}
-                          className="w-full"
-                          data-testid="filter-followers-slider"
-                        />
-                      </div>
+                      <Slider
+                        value={[filters.minFollowers, filters.maxFollowers]}
+                        onValueChange={([min, max]) => setFilters(prev => ({ ...prev, minFollowers: min, maxFollowers: max }))}
+                        min={0}
+                        max={1000000}
+                        step={1000}
+                      />
                       <div className="flex justify-between text-sm text-muted-foreground">
                         <span>{formatFollowers(filters.minFollowers)}</span>
                         <span>{formatFollowers(filters.maxFollowers)}</span>
                       </div>
                     </div>
 
-                    {/* Location */}
                     <div className="space-y-2">
                       <Label>Location</Label>
                       <Input
@@ -300,29 +411,25 @@ const BusinessDashboard = () => {
                         value={filters.location}
                         onChange={(e) => setFilters(prev => ({ ...prev, location: e.target.value }))}
                         className="input-orange"
-                        data-testid="filter-location-input"
                       />
                     </div>
 
-                    {/* Barter Toggle */}
                     <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
                       <div>
                         <p className="font-semibold">Open to Barter Only</p>
-                        <p className="text-sm text-muted-foreground">Filter creators who accept products</p>
+                        <p className="text-sm text-muted-foreground">Filter barter-friendly creators</p>
                       </div>
                       <Switch
                         checked={filters.openToBarter}
                         onCheckedChange={(checked) => setFilters(prev => ({ ...prev, openToBarter: checked }))}
-                        data-testid="filter-barter-switch"
                       />
                     </div>
 
-                    {/* Actions */}
                     <div className="flex gap-3 pt-4">
-                      <Button variant="outline" className="flex-1 rounded-full" onClick={resetFilters} data-testid="reset-filters-btn">
+                      <Button variant="outline" className="flex-1 rounded-full" onClick={resetFilters}>
                         Reset
                       </Button>
-                      <Button className="flex-1 btn-primary" onClick={applyFilters} data-testid="apply-filters-btn">
+                      <Button className="flex-1 btn-primary" onClick={applyFilters}>
                         Apply Filters
                       </Button>
                     </div>
@@ -349,37 +456,37 @@ const BusinessDashboard = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {creators.map((creator, idx) => (
-                  <CreatorCard 
+                  <CreatorDiscoveryCard 
                     key={creator.id} 
                     creator={creator} 
                     index={idx}
-                    onClick={() => navigate(`/profile/creator/${creator.id}`)}
+                    onClick={() => handleCreatorClick(creator)}
                   />
                 ))}
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="requests">
+          <TabsContent value="campaigns">
             <div className="mb-6">
-              <h2 className="font-heading text-2xl font-bold">Your Sent Requests</h2>
-              <p className="text-muted-foreground">Track your collaboration requests</p>
+              <h2 className="font-heading text-2xl font-bold">Your Campaigns</h2>
+              <p className="text-muted-foreground">Track your collaboration campaigns</p>
             </div>
 
-            {sentRequests.length === 0 ? (
+            {sentCampaigns.length === 0 ? (
               <div className="card-orange p-12 text-center">
                 <span className="text-5xl block mb-4">📤</span>
-                <h3 className="font-heading text-xl font-bold mb-2">No requests sent yet</h3>
-                <p className="text-muted-foreground">Browse the marketplace and send your first collab request!</p>
+                <h3 className="font-heading text-xl font-bold mb-2">No campaigns yet</h3>
+                <p className="text-muted-foreground">Unlock creators and send your first campaign!</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {sentRequests.map(request => (
-                  <SentRequestCard 
-                    key={request.id} 
-                    request={request}
-                    onChat={() => navigate(`/chat/${request.id}`)}
-                    onViewCreator={() => navigate(`/profile/creator/${request.creatorId}`)}
+                {sentCampaigns.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    onChat={() => navigate(`/chat/${campaign.id}`)}
+                    onViewCreator={() => navigate(`/profile/creator/${campaign.creatorId}`)}
                   />
                 ))}
               </div>
@@ -387,17 +494,81 @@ const BusinessDashboard = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Unlock Modal */}
+      <Dialog open={showUnlockModal} onOpenChange={setShowUnlockModal}>
+        <DialogContent className="sm:max-w-[450px]">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl flex items-center gap-2">
+              <Lock className="w-5 h-5 text-primary" />
+              Unlock Creator Profile
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedCreator && (
+            <div className="space-y-6 pt-4">
+              <div className="text-center">
+                <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-4xl">
+                  {selectedCreator.displayName?.[0]}
+                </div>
+                <h3 className="font-heading text-xl font-bold">{selectedCreator.displayName}</h3>
+                <p className="text-muted-foreground">{selectedCreator.city}</p>
+                <div className="flex justify-center gap-2 mt-2">
+                  {selectedCreator.niches?.slice(0, 2).map(niche => (
+                    <Badge key={niche} variant="secondary">{niche}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-muted/50 rounded-2xl p-4 space-y-2">
+                <p className="font-semibold text-sm">What you'll unlock:</p>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>✓ Full profile & bio</li>
+                  <li>✓ Exact engagement rate</li>
+                  <li>✓ Complete rate card</li>
+                  <li>✓ Full media gallery</li>
+                  <li>✓ In-app chat access</li>
+                </ul>
+                <p className="text-xs text-muted-foreground pt-2 border-t">
+                  Instagram access unlocks after campaign payment
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl">
+                <div>
+                  <p className="font-semibold">Your Credits</p>
+                  <p className="text-2xl font-bold text-primary">{unlockCredits.availableCredits}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold">Cost</p>
+                  <p className="text-2xl font-bold">1 Credit</p>
+                </div>
+              </div>
+
+              {unlockCredits.availableCredits > 0 ? (
+                <Button onClick={handleUnlockCreator} className="w-full btn-primary">
+                  <Unlock className="w-4 h-4 mr-2" />
+                  Unlock {selectedCreator.displayName}
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-center text-destructive font-semibold">No credits available!</p>
+                  <Button onClick={handleBuyCredits} className="w-full btn-primary" disabled={buyingCredits}>
+                    {buyingCredits ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CreditCard className="w-4 h-4 mr-2" />}
+                    Buy 5 Credits - ₹200
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const CreatorCard = ({ creator, index, onClick }) => {
-  const formatFollowers = (count) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-  };
-
+// Discovery Card (Layer 1 - Gated)
+const CreatorDiscoveryCard = ({ creator, index, onClick }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -408,19 +579,29 @@ const CreatorCard = ({ creator, index, onClick }) => {
       data-testid={`creator-card-${creator.id}`}
     >
       <div className="aspect-[3/4] relative">
-        {creator.profilePhotoUrl ? (
-          <img 
-            src={creator.profilePhotoUrl} 
-            alt={creator.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center">
-            <span className="text-6xl">{creator.name?.[0]}</span>
+        {/* Blurred/Placeholder Background */}
+        <div className="w-full h-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center">
+          {creator.previewImages?.[0] ? (
+            <img 
+              src={creator.previewImages[0]} 
+              alt=""
+              className={`w-full h-full object-cover ${!creator.isUnlocked ? 'blur-sm' : ''} group-hover:scale-105 transition-transform duration-300`}
+            />
+          ) : (
+            <span className="text-6xl">{creator.displayName?.[0]}</span>
+          )}
+        </div>
+        
+        {/* Lock Overlay for non-unlocked */}
+        {!creator.isUnlocked && (
+          <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+            <div className="bg-white/90 backdrop-blur-sm rounded-full p-3">
+              <Lock className="w-6 h-6 text-primary" />
+            </div>
           </div>
         )}
         
-        {/* Overlay */}
+        {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
         
         {/* Badges */}
@@ -438,20 +619,33 @@ const CreatorCard = ({ creator, index, onClick }) => {
           </div>
         )}
 
+        {creator.isUnlocked && (
+          <div className="absolute top-3 right-3">
+            <Badge className="bg-green-500 text-white">
+              <Unlock className="w-3 h-3 mr-1" />
+              Unlocked
+            </Badge>
+          </div>
+        )}
+
         {/* Info */}
         <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-          <h3 className="font-heading font-bold text-lg mb-1">{creator.name}</h3>
+          <h3 className="font-heading font-bold text-lg mb-1">{creator.displayName}</h3>
           <div className="flex items-center gap-3 text-sm opacity-90">
             <div className="flex items-center gap-1">
               <Users className="w-4 h-4" />
-              {formatFollowers(creator.followersCount || 0)}
+              {creator.followersDisplay}
             </div>
-            {creator.location && (
+            {creator.city && (
               <div className="flex items-center gap-1">
                 <MapPin className="w-4 h-4" />
-                {creator.location}
+                {creator.city}
               </div>
             )}
+          </div>
+          <div className="mt-2 flex items-center gap-3 text-xs opacity-80">
+            <span>📊 {creator.engagementRateDisplay}</span>
+            <span>💰 {creator.rateRangeDisplay}</span>
           </div>
         </div>
       </div>
@@ -459,63 +653,73 @@ const CreatorCard = ({ creator, index, onClick }) => {
   );
 };
 
-const SentRequestCard = ({ request, onChat, onViewCreator }) => {
+// Campaign Card
+const CampaignCard = ({ campaign, onChat, onViewCreator }) => {
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
   const statusColors = {
-    pending: 'bg-yellow-100 text-yellow-800',
+    proposed: 'bg-blue-100 text-blue-800',
     accepted: 'bg-green-100 text-green-800',
-    declined: 'bg-red-100 text-red-800'
+    declined: 'bg-red-100 text-red-800',
+    in_progress: 'bg-yellow-100 text-yellow-800',
+    delivered: 'bg-purple-100 text-purple-800',
+    completed: 'bg-green-100 text-green-800',
+    cancelled: 'bg-gray-100 text-gray-800'
+  };
+
+  const escrowColors = {
+    pending: 'bg-orange-100 text-orange-800',
+    paid: 'bg-green-100 text-green-800',
+    released: 'bg-blue-100 text-blue-800'
   };
 
   return (
-    <div className="card-orange p-6" data-testid={`sent-request-${request.id}`}>
+    <div className="card-orange p-6" data-testid={`campaign-${campaign.id}`}>
       <div className="flex items-start gap-4">
-        <Avatar 
-          className="w-14 h-14 border-2 border-orange-100 cursor-pointer" 
-          onClick={onViewCreator}
-        >
-          <AvatarImage src={request.creatorPhoto} />
+        <Avatar className="w-14 h-14 border-2 border-orange-100 cursor-pointer" onClick={onViewCreator}>
           <AvatarFallback className="bg-primary/10 text-primary">
-            {request.creatorName?.[0]}
+            {campaign.creatorName?.[0]}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <h4 className="font-semibold cursor-pointer hover:text-primary transition-colors" onClick={onViewCreator}>
-              {request.creatorName || 'Creator'}
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <h4 className="font-semibold cursor-pointer hover:text-primary" onClick={onViewCreator}>
+              {campaign.creatorName || 'Creator'}
             </h4>
-            <Badge className={statusColors[request.status]}>
-              {request.status}
+            <Badge className={statusColors[campaign.campaignStatus]}>
+              {campaign.campaignStatus?.replace('_', ' ')}
+            </Badge>
+            <Badge className={escrowColors[campaign.escrowStatus]}>
+              Escrow: {campaign.escrowStatus}
             </Badge>
           </div>
-          <h3 className="font-heading text-lg font-bold mb-2">{request.title}</h3>
-          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">{request.brief}</p>
+          <h3 className="font-heading text-lg font-bold mb-2">{campaign.title}</h3>
+          <p className="text-muted-foreground text-sm mb-3 line-clamp-2">{campaign.brief}</p>
           
           <div className="flex flex-wrap gap-4 text-sm">
-            {request.offerAmount > 0 && (
-              <div className="flex items-center gap-1 text-primary font-semibold">
-                <DollarSign className="w-4 h-4" />
-                {formatPrice(request.offerAmount)}
-              </div>
+            <div className="flex items-center gap-1 text-primary font-semibold">
+              <DollarSign className="w-4 h-4" />
+              {formatPrice(campaign.price)}
+            </div>
+            {campaign.deliverables && (
+              <div className="text-muted-foreground">📦 {campaign.deliverables}</div>
             )}
-            {request.deliverables && (
-              <div className="text-muted-foreground">📦 {request.deliverables}</div>
+            {campaign.instagramHandle && (
+              <a href={campaign.instagramUrl} target="_blank" rel="noopener noreferrer" 
+                 className="flex items-center gap-1 text-primary hover:underline">
+                <Instagram className="w-4 h-4" />
+                {campaign.instagramHandle}
+              </a>
             )}
           </div>
         </div>
         
-        {/* Chat available for pending and accepted requests */}
-        {request.status !== 'declined' && (
-          <Button 
-            onClick={onChat} 
-            className={request.status === 'accepted' ? "btn-primary" : "btn-secondary"}
-            data-testid={`chat-btn-${request.id}`}
-          >
+        {campaign.campaignStatus !== 'declined' && campaign.campaignStatus !== 'cancelled' && (
+          <Button onClick={onChat} className="btn-primary" data-testid={`chat-btn-${campaign.id}`}>
             <MessageSquare className="w-4 h-4 mr-2" />
-            {request.status === 'pending' ? 'Message Creator' : 'Chat'}
+            Chat
           </Button>
         )}
       </div>
