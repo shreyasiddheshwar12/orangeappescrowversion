@@ -124,6 +124,61 @@ const BusinessOnboarding = () => {
     }));
   };
 
+  // Toggle preferred niche
+  const toggleNiche = (niche) => {
+    setFormData(prev => ({
+      ...prev,
+      preferredNiches: prev.preferredNiches.includes(niche)
+        ? prev.preferredNiches.filter(n => n !== niche)
+        : [...prev.preferredNiches, niche]
+    }));
+  };
+
+  // Past Collaborations helpers
+  const addPastCollab = () => {
+    setFormData(prev => ({
+      ...prev,
+      pastCollaborations: [
+        ...prev.pastCollaborations,
+        { campaignName: '', creatorNiche: '', platform: 'Instagram', description: '', mediaUrl: '', link: '' }
+      ]
+    }));
+  };
+
+  const updatePastCollab = (index, field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      pastCollaborations: prev.pastCollaborations.map((collab, i) =>
+        i === index ? { ...collab, [field]: value } : collab
+      )
+    }));
+  };
+
+  const removePastCollab = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      pastCollaborations: prev.pastCollaborations.filter((_, i) => i !== index)
+    }));
+  };
+
+  // Instagram verification
+  const verifyInstagram = async () => {
+    if (!formData.instagramHandle) {
+      toast.error("Enter your Instagram handle first");
+      return;
+    }
+    setVerifyingInstagram(true);
+    try {
+      await instagramAPI.verify(formData.instagramHandle);
+      setInstagramVerified(true);
+      toast.success("Instagram verified! ✓");
+    } catch (error) {
+      toast.error("Verification failed. Try again.");
+    } finally {
+      setVerifyingInstagram(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!formData.brandName) {
       toast.error("Brand name is required!");
@@ -132,12 +187,24 @@ const BusinessOnboarding = () => {
 
     setLoading(true);
     try {
-      await businessAPI.createProfile(formData);
+      const profileData = {
+        brandName: formData.brandName,
+        industry: formData.category,
+        bio: formData.bio,
+        location: formData.location,
+        budgetRange: formData.budgetRange,
+        preferredNiches: formData.preferredNiches,
+        isOpenToBarter: formData.isOpenToBarter,
+        profilePhotoUrl: formData.profilePhotoUrl,
+        pastCollaborations: formData.pastCollaborations.filter(c => c.campaignName) // Only send non-empty
+      };
+      await businessAPI.createProfile(profileData);
       updateUser({ hasCompletedOnboarding: true });
       toast.success("Brand profile ready! Let's find your next favorite creator 🤝");
       navigate('/dashboard/business');
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to create profile");
+      const errorMsg = error.response?.data?.detail || error.response?.data?.message || "Failed to create profile";
+      toast.error(typeof errorMsg === 'string' ? errorMsg : "Failed to create profile");
     } finally {
       setLoading(false);
     }
