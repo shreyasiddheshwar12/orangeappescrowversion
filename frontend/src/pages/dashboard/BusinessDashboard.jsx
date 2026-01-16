@@ -146,7 +146,7 @@ const BusinessDashboard = () => {
       // Navigate to unlocked profile
       navigate(`/profile/creator/${selectedCreator.id}`);
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to unlock creator");
+      toast.error(getErrorMessage(error, "Failed to unlock creator"));
     }
   };
 
