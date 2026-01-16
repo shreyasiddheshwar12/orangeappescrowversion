@@ -210,6 +210,15 @@ class CreatorFullAccess(CreatorProfileFull):
     pass
 
 # Brand Profile
+class PastCollaboration(BaseModel):
+    """Past collaboration details for brand trust building"""
+    campaignName: str = ""
+    creatorNiche: str = ""
+    platform: str = "Instagram"
+    description: Optional[str] = ""
+    mediaUrl: Optional[str] = ""
+    link: Optional[str] = ""
+
 class BrandProfileCreate(BaseModel):
     brandName: str
     industry: Optional[str] = ""
@@ -219,7 +228,8 @@ class BrandProfileCreate(BaseModel):
     preferredNiches: Optional[List[str]] = []
     isOpenToBarter: Optional[bool] = False
     profilePhotoUrl: Optional[str] = ""
-    pastCampaigns: Optional[List[str]] = []  # URLs to past campaign content
+    pastCampaigns: Optional[List[str]] = []  # URLs to past campaign content (legacy)
+    pastCollaborations: Optional[List[PastCollaboration]] = []  # Detailed past collabs
 
 class BrandProfileFull(BaseModel):
     id: str
