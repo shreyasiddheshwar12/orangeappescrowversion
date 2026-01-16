@@ -157,6 +157,8 @@ class CreatorProfileCreate(BaseModel):
     rates: Optional[RateInfo] = None
     profilePhotoUrl: Optional[str] = ""
     sampleContent: Optional[List[str]] = []  # URLs to sample content
+    followersCount: Optional[int] = None  # From Instagram verification
+    engagementRate: Optional[float] = None  # From Instagram verification
 
 class CreatorProfileFull(BaseModel):
     id: str
