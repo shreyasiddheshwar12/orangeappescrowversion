@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth';
+import { getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 
 const Login = () => {
@@ -31,7 +32,7 @@ const Login = () => {
         navigate(user.role === 'creator' ? '/dashboard/creator' : '/dashboard/business');
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Invalid email or password");
+      toast.error(getErrorMessage(error, "Invalid email or password"));
     } finally {
       setLoading(false);
     }
