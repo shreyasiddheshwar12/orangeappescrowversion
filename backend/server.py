@@ -250,6 +250,7 @@ class BrandDiscovery(BaseModel):
     preferredNiches: List[str]
     isOpenToBarter: bool
     pastCollabCount: int
+    pastCollabsDisplay: str = "0 collabs"
     isUnlocked: bool = False
 
 # Brand Unlocked (After Credit)
