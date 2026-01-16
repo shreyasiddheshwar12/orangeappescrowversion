@@ -143,7 +143,7 @@ export const marketplaceAPI = {
 // Two-Way Request API
 export const requestsAPI = {
   // Send a collab request (works both ways)
-  create: (data) => api.post('/requests', data),
+  create: (data) => api.post('/requests/', data),
   getIncoming: () => api.get('/requests/incoming'),
   getOutgoing: () => api.get('/requests/outgoing'),
   respond: (id, action) => api.patch(`/requests/${id}/respond?action=${action}`),
