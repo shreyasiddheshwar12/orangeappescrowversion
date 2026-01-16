@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   Instagram, MapPin, Users, Edit, LogOut, MessageSquare, Check, X, 
-  ExternalLink, DollarSign, Image as ImageIcon, Loader2
+  ExternalLink, DollarSign, Image as ImageIcon, Loader2, Lock, Unlock
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { creatorAPI, requestsAPI } from '../../lib/api';
+import { creatorAPI, campaignsAPI } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
@@ -17,7 +17,7 @@ const CreatorDashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState(null);
-  const [requests, setRequests] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
 
@@ -27,12 +27,12 @@ const CreatorDashboard = () => {
 
   const loadData = async () => {
     try {
-      const [profileRes, requestsRes] = await Promise.all([
+      const [profileRes, campaignsRes] = await Promise.all([
         creatorAPI.getProfile(),
         creatorAPI.getRequests()
       ]);
       setProfile(profileRes.data);
-      setRequests(requestsRes.data);
+      setCampaigns(campaignsRes.data);
     } catch (error) {
       if (error.response?.status === 404) {
         navigate('/onboarding/creator');
@@ -44,17 +44,23 @@ const CreatorDashboard = () => {
     }
   };
 
-  const handleRequestAction = async (requestId, newStatus) => {
-    setActionLoading(requestId);
+  const handleCampaignAction = async (campaignId, newStatus) => {
+    setActionLoading(campaignId);
     try {
-      await requestsAPI.updateStatus(requestId, newStatus);
-      // Force UI update with new status
-      setRequests(prev => prev.map(r => 
-        r.id === requestId ? { ...r, status: newStatus } : r
+      await campaignsAPI.updateStatus(campaignId, newStatus);
+      setCampaigns(prev => prev.map(c => 
+        c.id === campaignId ? { ...c, campaignStatus: newStatus } : c
       ));
-      toast.success(newStatus === 'accepted' ? "Request accepted! Time to make magic ✨" : "Request declined");
+      
+      if (newStatus === 'accepted') {
+        toast.success("Campaign accepted! Time to make magic ✨");
+      } else if (newStatus === 'declined') {
+        toast.success("Campaign declined");
+      } else if (newStatus === 'delivered') {
+        toast.success("Marked as delivered! Waiting for brand approval 🎉");
+      }
     } catch (error) {
-      toast.error("Failed to update request");
+      toast.error("Failed to update campaign");
     } finally {
       setActionLoading(null);
     }
@@ -86,9 +92,10 @@ const CreatorDashboard = () => {
     );
   }
 
-  const pendingRequests = requests.filter(r => r.status === 'pending');
-  const acceptedRequests = requests.filter(r => r.status === 'accepted');
-  const declinedRequests = requests.filter(r => r.status === 'declined');
+  const proposedCampaigns = campaigns.filter(c => c.campaignStatus === 'proposed');
+  const acceptedCampaigns = campaigns.filter(c => ['accepted', 'in_progress'].includes(c.campaignStatus));
+  const completedCampaigns = campaigns.filter(c => ['delivered', 'completed'].includes(c.campaignStatus));
+  const declinedCampaigns = campaigns.filter(c => ['declined', 'cancelled'].includes(c.campaignStatus));
 
   return (
     <div className="min-h-screen bg-background">
@@ -165,7 +172,6 @@ const CreatorDashboard = () => {
                   ))}
                 </div>
 
-                {/* Barter Badge */}
                 {profile?.isOpenToBarter && (
                   <Badge className="bg-accent text-accent-foreground">
                     🤝 Open to Barter
@@ -221,7 +227,7 @@ const CreatorDashboard = () => {
             </motion.div>
           </div>
 
-          {/* Requests Section */}
+          {/* Campaigns Section */}
           <div className="lg:col-span-2">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -229,13 +235,13 @@ const CreatorDashboard = () => {
               transition={{ delay: 0.1 }}
             >
               <div className="flex items-center justify-between mb-6">
-                <h2 className="font-heading text-2xl font-bold">Collab Requests 🍊</h2>
+                <h2 className="font-heading text-2xl font-bold">Your Campaigns 🍊</h2>
                 <Badge variant="secondary" className="text-lg px-4 py-1">
-                  {pendingRequests.length} new
+                  {proposedCampaigns.length} new
                 </Badge>
               </div>
 
-              {requests.length === 0 ? (
+              {campaigns.length === 0 ? (
                 <div className="card-orange p-12 text-center">
                   <span className="text-5xl block mb-4">🍊</span>
                   <h3 className="font-heading text-xl font-bold mb-2">No collabs yet…</h3>
@@ -244,59 +250,79 @@ const CreatorDashboard = () => {
                   </p>
                 </div>
               ) : (
-                <Tabs defaultValue="pending" className="w-full">
+                <Tabs defaultValue="proposed" className="w-full">
                   <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
-                    <TabsTrigger value="pending" className="rounded-full data-[state=active]:bg-white">
-                      Pending ({pendingRequests.length})
+                    <TabsTrigger value="proposed" className="rounded-full data-[state=active]:bg-white">
+                      New ({proposedCampaigns.length})
                     </TabsTrigger>
-                    <TabsTrigger value="accepted" className="rounded-full data-[state=active]:bg-white">
-                      Accepted ({acceptedRequests.length})
+                    <TabsTrigger value="active" className="rounded-full data-[state=active]:bg-white">
+                      Active ({acceptedCampaigns.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="completed" className="rounded-full data-[state=active]:bg-white">
+                      Done ({completedCampaigns.length})
                     </TabsTrigger>
                     <TabsTrigger value="declined" className="rounded-full data-[state=active]:bg-white">
-                      Declined ({declinedRequests.length})
+                      Declined ({declinedCampaigns.length})
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="pending" className="space-y-4">
-                    {pendingRequests.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No pending requests</p>
+                  <TabsContent value="proposed" className="space-y-4">
+                    {proposedCampaigns.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">No new proposals</p>
                     ) : (
-                      pendingRequests.map(request => (
-                        <RequestCard 
-                          key={request.id}
-                          request={request}
-                          onAccept={() => handleRequestAction(request.id, 'accepted')}
-                          onDecline={() => handleRequestAction(request.id, 'declined')}
-                          onChat={() => navigate(`/chat/${request.id}`)}
-                          loading={actionLoading === request.id}
+                      proposedCampaigns.map(campaign => (
+                        <CampaignCard 
+                          key={campaign.id}
+                          campaign={campaign}
+                          onAccept={() => handleCampaignAction(campaign.id, 'accepted')}
+                          onDecline={() => handleCampaignAction(campaign.id, 'declined')}
+                          onChat={() => navigate(`/chat/${campaign.id}`)}
+                          loading={actionLoading === campaign.id}
                           showActions
                         />
                       ))
                     )}
                   </TabsContent>
 
-                  <TabsContent value="accepted" className="space-y-4">
-                    {acceptedRequests.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No accepted requests yet</p>
+                  <TabsContent value="active" className="space-y-4">
+                    {acceptedCampaigns.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">No active campaigns</p>
                     ) : (
-                      acceptedRequests.map(request => (
-                        <RequestCard 
-                          key={request.id}
-                          request={request}
-                          onChat={() => navigate(`/chat/${request.id}`)}
+                      acceptedCampaigns.map(campaign => (
+                        <CampaignCard 
+                          key={campaign.id}
+                          campaign={campaign}
+                          onChat={() => navigate(`/chat/${campaign.id}`)}
+                          onDeliver={() => handleCampaignAction(campaign.id, 'delivered')}
+                          loading={actionLoading === campaign.id}
+                          showDeliverButton={campaign.escrowStatus === 'paid'}
+                        />
+                      ))
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="completed" className="space-y-4">
+                    {completedCampaigns.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">No completed campaigns</p>
+                    ) : (
+                      completedCampaigns.map(campaign => (
+                        <CampaignCard 
+                          key={campaign.id}
+                          campaign={campaign}
+                          onChat={() => navigate(`/chat/${campaign.id}`)}
                         />
                       ))
                     )}
                   </TabsContent>
 
                   <TabsContent value="declined" className="space-y-4">
-                    {declinedRequests.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No declined requests</p>
+                    {declinedCampaigns.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-8">No declined campaigns</p>
                     ) : (
-                      declinedRequests.map(request => (
-                        <RequestCard 
-                          key={request.id}
-                          request={request}
+                      declinedCampaigns.map(campaign => (
+                        <CampaignCard 
+                          key={campaign.id}
+                          campaign={campaign}
                         />
                       ))
                     )}
@@ -337,65 +363,81 @@ const CreatorDashboard = () => {
   );
 };
 
-const RequestCard = ({ request, onAccept, onDecline, onChat, loading, showActions }) => {
+const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loading, showActions, showDeliverButton }) => {
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
   const statusColors = {
-    pending: 'bg-yellow-100 text-yellow-800',
+    proposed: 'bg-blue-100 text-blue-800',
     accepted: 'bg-green-100 text-green-800',
-    declined: 'bg-red-100 text-red-800'
+    declined: 'bg-red-100 text-red-800',
+    in_progress: 'bg-yellow-100 text-yellow-800',
+    delivered: 'bg-purple-100 text-purple-800',
+    completed: 'bg-green-100 text-green-800',
+    cancelled: 'bg-gray-100 text-gray-800'
+  };
+
+  const escrowColors = {
+    pending: 'bg-orange-100 text-orange-800',
+    paid: 'bg-green-100 text-green-800',
+    released: 'bg-blue-100 text-blue-800'
   };
 
   return (
-    <div className="card-orange p-6" data-testid={`request-card-${request.id}`}>
+    <div className="card-orange p-6" data-testid={`campaign-card-${campaign.id}`}>
       <div className="flex items-start gap-4">
         <Avatar className="w-12 h-12 border-2 border-orange-100">
-          <AvatarImage src={request.businessPhoto} />
           <AvatarFallback className="bg-primary/10 text-primary">
-            {request.businessName?.[0]}
+            {campaign.brandName?.[0]}
           </AvatarFallback>
         </Avatar>
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <h4 className="font-semibold">{request.businessName || 'Brand'}</h4>
-            <Badge className={statusColors[request.status]}>
-              {request.status}
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <h4 className="font-semibold">{campaign.brandName || 'Brand'}</h4>
+            <Badge className={statusColors[campaign.campaignStatus]}>
+              {campaign.campaignStatus?.replace('_', ' ')}
+            </Badge>
+            <Badge className={escrowColors[campaign.escrowStatus]}>
+              {campaign.escrowStatus === 'paid' ? '💰 Paid' : 
+               campaign.escrowStatus === 'released' ? '✅ Released' : '⏳ Pending Payment'}
             </Badge>
           </div>
-          <h3 className="font-heading text-lg font-bold mb-2">{request.title}</h3>
-          <p className="text-muted-foreground text-sm mb-3">{request.brief}</p>
+          <h3 className="font-heading text-lg font-bold mb-2">{campaign.title}</h3>
+          <p className="text-muted-foreground text-sm mb-3">{campaign.brief}</p>
           
           <div className="flex flex-wrap gap-4 text-sm">
-            {request.offerAmount > 0 && (
+            {campaign.price > 0 && (
               <div className="flex items-center gap-1 text-primary font-semibold">
                 <DollarSign className="w-4 h-4" />
-                {formatPrice(request.offerAmount)}
+                {formatPrice(campaign.price)}
               </div>
             )}
-            {request.deliverables && (
+            {campaign.deliverables && (
               <div className="text-muted-foreground">
-                📦 {request.deliverables}
+                📦 {campaign.deliverables}
               </div>
             )}
-            {request.timeline && (
+            {campaign.timeline && (
               <div className="text-muted-foreground">
-                ⏰ {request.timeline}
+                ⏰ {campaign.timeline}
               </div>
+            )}
+            {campaign.isBarter && (
+              <Badge className="bg-accent/50 text-accent-foreground">🤝 Barter Deal</Badge>
             )}
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3 mt-4 pt-4 border-t border-orange-100">
-        {showActions && request.status === 'pending' && (
+        {showActions && campaign.campaignStatus === 'proposed' && (
           <>
             <Button
               onClick={onAccept}
               disabled={loading}
               className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground rounded-full"
-              data-testid={`accept-request-${request.id}`}
+              data-testid={`accept-campaign-${campaign.id}`}
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
               Accept
@@ -405,25 +447,47 @@ const RequestCard = ({ request, onAccept, onDecline, onChat, loading, showAction
               disabled={loading}
               variant="outline"
               className="flex-1 rounded-full"
-              data-testid={`decline-request-${request.id}`}
+              data-testid={`decline-campaign-${campaign.id}`}
             >
               <X className="w-4 h-4 mr-2" />
               Decline
             </Button>
           </>
         )}
-        {/* Chat available for both pending and accepted requests */}
-        {(request.status === 'pending' || request.status === 'accepted') && onChat && (
+        
+        {showDeliverButton && campaign.campaignStatus !== 'delivered' && (
+          <Button
+            onClick={onDeliver}
+            disabled={loading}
+            className="bg-purple-500 hover:bg-purple-600 text-white rounded-full"
+            data-testid={`deliver-campaign-${campaign.id}`}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : '📦 Mark Delivered'}
+          </Button>
+        )}
+        
+        {/* Chat available for all non-declined campaigns */}
+        {!['declined', 'cancelled'].includes(campaign.campaignStatus) && onChat && (
           <Button
             onClick={onChat}
-            className={request.status === 'accepted' ? "btn-primary flex-1" : "btn-secondary flex-1"}
-            data-testid={`chat-request-${request.id}`}
+            className={campaign.escrowStatus === 'paid' ? "btn-primary flex-1" : "btn-secondary flex-1"}
+            data-testid={`chat-campaign-${campaign.id}`}
           >
             <MessageSquare className="w-4 h-4 mr-2" />
-            {request.status === 'pending' ? 'Message Brand' : 'Open Chat'}
+            {campaign.escrowStatus === 'paid' ? 'Chat (Full Access)' : 'Chat'}
           </Button>
         )}
       </div>
+      
+      {/* Warning for unpaid escrow */}
+      {campaign.campaignStatus === 'accepted' && campaign.escrowStatus === 'pending' && (
+        <div className="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-200">
+          <p className="text-sm text-orange-800 flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            Waiting for brand to pay escrow. Instagram access will unlock after payment.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
