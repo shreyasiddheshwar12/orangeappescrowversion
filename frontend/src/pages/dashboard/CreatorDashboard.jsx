@@ -383,14 +383,14 @@ const CreatorDashboard = () => {
                     {/* Filters */}
                     <div className="flex flex-wrap gap-3 mb-6">
                       <Select 
-                        value={brandFilters.industry} 
-                        onValueChange={(v) => setBrandFilters(f => ({...f, industry: v}))}
+                        value={brandFilters.industry || "all"} 
+                        onValueChange={(v) => setBrandFilters(f => ({...f, industry: v === "all" ? "" : v}))}
                       >
                         <SelectTrigger className="w-[150px] rounded-full">
                           <SelectValue placeholder="Industry" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Industries</SelectItem>
+                          <SelectItem value="all">All Industries</SelectItem>
                           <SelectItem value="Beauty">Beauty</SelectItem>
                           <SelectItem value="Fashion">Fashion</SelectItem>
                           <SelectItem value="Fitness">Fitness</SelectItem>
@@ -398,6 +398,7 @@ const CreatorDashboard = () => {
                           <SelectItem value="Tech">Tech</SelectItem>
                           <SelectItem value="Travel">Travel</SelectItem>
                           <SelectItem value="Lifestyle">Lifestyle</SelectItem>
+                          <SelectItem value="Health">Health</SelectItem>
                         </SelectContent>
                       </Select>
                       
