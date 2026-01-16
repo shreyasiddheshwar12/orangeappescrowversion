@@ -153,11 +153,13 @@ const CreatorOnboarding = () => {
       const profileData = {
         ...formData,
         followersCount: parseInt(formData.followersCount) || 0,
+        engagementRate: parseFloat(formData.engagementRate) || 0,
         rates: {
           reelPrice: parseFloat(formData.rates.reelPrice) || 0,
           storyPrice: parseFloat(formData.rates.storyPrice) || 0,
           postPrice: parseFloat(formData.rates.postPrice) || 0,
-          bundlePrice: parseFloat(formData.rates.bundlePrice) || 0
+          bundlePrice: parseFloat(formData.rates.bundlePrice) || 0,
+          carouselPrice: parseFloat(formData.rates.carouselPrice) || 0
         }
       };
 
