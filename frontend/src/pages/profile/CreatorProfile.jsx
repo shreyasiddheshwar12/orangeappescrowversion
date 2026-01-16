@@ -71,21 +71,19 @@ const CreatorProfile = () => {
 
     setSendingCampaign(true);
     try {
-      await campaignsAPI.create({
-        creatorId: id,
-        title: campaignForm.title,
-        brief: campaignForm.brief,
-        price: parseFloat(campaignForm.price) || 0,
-        deliverables: campaignForm.deliverables,
-        timeline: campaignForm.timeline,
-        isBarter: campaignForm.isBarter,
-        barterDetails: campaignForm.barterDetails
+      // Send collab request (not campaign - campaigns are created after request is accepted)
+      await requestsAPI.create({
+        receiverId: id,
+        receiverType: 'creator',
+        message: `${campaignForm.title}\n\n${campaignForm.brief}\n\nDeliverables: ${campaignForm.deliverables}\nTimeline: ${campaignForm.timeline}${campaignForm.isBarter ? '\n\nBarter: ' + campaignForm.barterDetails : ''}`,
+        proposedBudget: parseFloat(campaignForm.price) || 0,
+        deliverables: campaignForm.deliverables
       });
-      toast.success("Campaign sent! Time to make magic together ✨");
+      toast.success("Request sent! Waiting for creator's response ✨");
       setShowCampaignDialog(false);
       setCampaignForm({ title: '', brief: '', price: '', deliverables: '', timeline: '', isBarter: false, barterDetails: '' });
     } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to send campaign"));
+      toast.error(getErrorMessage(error, "Failed to send request"));
     } finally {
       setSendingCampaign(false);
     }
