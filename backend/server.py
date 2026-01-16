@@ -686,6 +686,11 @@ async def create_brand_profile(profile: BrandProfileCreate, current_user: dict =
     instagram_user_id = user_record.get("instagramUserId") or (existing.get("instagramUserId") if existing else None)
     instagram_username = user_record.get("instagramUsername") or (existing.get("instagramUsername") if existing else None)
     
+    # Convert past collaborations to dict format for MongoDB
+    past_collabs_data = []
+    if profile.pastCollaborations:
+        past_collabs_data = [collab.model_dump() for collab in profile.pastCollaborations]
+    
     profile_doc = {
         "id": profile_id,
         "userId": current_user["id"],
@@ -701,7 +706,8 @@ async def create_brand_profile(profile: BrandProfileCreate, current_user: dict =
         "isOpenToBarter": profile.isOpenToBarter or False,
         "profilePhotoUrl": profile.profilePhotoUrl or "",
         "pastCampaigns": profile.pastCampaigns or [],
-        "pastCollabCount": past_collab_count,
+        "pastCollaborations": past_collabs_data,
+        "pastCollabCount": len(past_collabs_data) if past_collabs_data else past_collab_count,
         "createdAt": existing["createdAt"] if existing else now,
         "updatedAt": now
     }
