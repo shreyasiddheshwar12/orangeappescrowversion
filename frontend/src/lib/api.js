@@ -10,13 +10,11 @@ export const getErrorMessage = (error, defaultMessage = "Something went wrong") 
   if (!errorData) return error.message || defaultMessage;
   if (typeof errorData === 'string') return errorData;
   
-  // Handle FastAPI validation errors (array of {type, loc, msg, input, url})
   if (errorData.detail) {
     if (typeof errorData.detail === 'string') return errorData.detail;
     if (Array.isArray(errorData.detail)) {
       return errorData.detail.map(e => e.msg || String(e)).join(', ');
     }
-    // If detail is an object, try to get msg
     if (typeof errorData.detail === 'object' && errorData.detail.msg) {
       return errorData.detail.msg;
     }
@@ -63,132 +61,97 @@ api.interceptors.response.use(
 export const authAPI = {
   signup: (data) => api.post('/auth/signup', data),
   login: (data) => api.post('/auth/login', data),
+  logout: () => api.post('/auth/logout'),
   getMe: () => api.get('/auth/me'),
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    return api.post('/auth/logout');
-  },
-};
-
-// Upload API
-export const uploadAPI = {
-  uploadFile: async (file) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post('/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-  },
+  verifyInstagram: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
 };
 
 // Creator API
 export const creatorAPI = {
   createProfile: (data) => api.post('/creator/profile', data),
   getProfile: () => api.get('/creator/profile'),
-  getRequests: () => requestsAPI.getIncoming(),
 };
 
-// Business API
+// Business/Brand API
 export const businessAPI = {
   createProfile: (data) => api.post('/business/profile', data),
   getProfile: () => api.get('/business/profile'),
-  getUnlockCredits: () => paymentsAPI.getCredits(),
 };
 
-// Instagram Verification (Simulated)
-export const instagramAPI = {
-  verify: (username) => api.post('/instagram/verify', { instagramUsername: username }),
-};
-
-// Marketplace API (Gated - Two-Way)
+// FREE Marketplace Discovery API
 export const marketplaceAPI = {
-  // Layer 1: Discovery (Free) - Brands see creators
+  // Discover creators - FREE, partial data
   discoverCreators: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.niche) params.append('niche', filters.niche);
-    if (filters.minFollowers) params.append('minFollowers', filters.minFollowers);
-    if (filters.maxFollowers) params.append('maxFollowers', filters.maxFollowers);
-    if (filters.location) params.append('location', filters.location);
-    if (filters.openToBarter !== undefined) params.append('openToBarter', filters.openToBarter);
+    if (filters.language) params.append('language', filters.language);
+    if (filters.contentType) params.append('contentType', filters.contentType);
+    if (filters.minPrice) params.append('minPrice', filters.minPrice);
+    if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
+    if (filters.barterOnly) params.append('barterOnly', filters.barterOnly);
     return api.get(`/marketplace/creators?${params.toString()}`);
   },
   
-  // Layer 1: Discovery (Free) - Creators see brands
+  // Discover brands - FREE, partial data
   discoverBrands: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.industry) params.append('industry', filters.industry);
     if (filters.location) params.append('location', filters.location);
-    if (filters.openToBarter !== undefined) params.append('openToBarter', filters.openToBarter);
+    if (filters.barterOnly) params.append('barterOnly', filters.barterOnly);
     return api.get(`/marketplace/brands?${params.toString()}`);
   },
-  
-  // Layer 2: Unlocked (After Credit)
-  getUnlockedCreator: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
-  getUnlockedBrand: (id) => api.get(`/marketplace/brands/${id}/unlocked`),
-  
-  // Layer 3: Full Access (After Escrow) - handled via campaign
-  getFullCreator: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
-  
-  // Unlock a profile (costs 1 credit)
-  unlockCreator: (id) => api.post(`/marketplace/creator/${id}/unlock`),
-  unlockBrand: (id) => api.post(`/marketplace/brand/${id}/unlock`),
-  
-  // Legacy compatibility
-  getCreators: (filters = {}) => marketplaceAPI.discoverCreators(filters),
-  getCreatorById: (id) => api.get(`/marketplace/creators/${id}/unlocked`),
-  getBusinessById: (id) => api.get(`/marketplace/brands/${id}/unlocked`),
 };
 
-// Two-Way Request API
-export const requestsAPI = {
-  // Send a collab request (works both ways)
-  create: (data) => api.post('/requests/', data),
-  getIncoming: () => api.get('/requests/incoming'),
-  getOutgoing: () => api.get('/requests/outgoing'),
-  respond: (id, action) => api.patch(`/requests/${id}/respond?action=${action}`),
-};
-
-// Campaigns API (After request acceptance)
-export const campaignsAPI = {
-  create: (data) => api.post('/campaigns', data),
-  getMyCampaigns: () => api.get('/campaigns/my/list'),
+// Campaign API - Core collaboration flow
+export const campaignAPI = {
+  // Send campaign request
+  create: (data) => api.post('/campaigns/', data),
+  
+  // Get incoming campaigns (where user is receiver)
+  getIncoming: () => api.get('/campaigns/incoming'),
+  
+  // Get outgoing campaigns (where user is sender)
+  getOutgoing: () => api.get('/campaigns/outgoing'),
+  
+  // Get single campaign
   getById: (id) => api.get(`/campaigns/${id}`),
-  confirm: (id) => api.patch(`/campaigns/${id}/confirm`),
-  // Legacy
-  getSent: () => api.get('/campaigns/my/list'),
-  updateStatus: (id, status) => api.patch(`/campaigns/${id}/confirm`),
+  
+  // Accept/Reject campaign
+  respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
+  
+  // Pay for campaign (unlocks identity + chat)
+  pay: (id) => api.post(`/campaigns/${id}/pay`),
+  
+  // Add shipping details (barter)
+  addShipping: (id, details) => api.post(`/campaigns/${id}/shipping?shippingDetails=${encodeURIComponent(details)}`),
+  
+  // Confirm product received (barter)
+  confirmReceipt: (id) => api.post(`/campaigns/${id}/product-received`),
+  
+  // Submit content link
+  submitContent: (id, link) => api.post(`/campaigns/${id}/submit-content?contentLink=${encodeURIComponent(link)}`),
+  
+  // Approve content (releases escrow)
+  approveContent: (id) => api.post(`/campaigns/${id}/approve`),
+  
+  // Report issue
+  report: (id, reason) => api.post(`/campaigns/${id}/report?reason=${encodeURIComponent(reason)}`),
 };
 
-// Messages API
+// Messages API - Chat (only after payment)
 export const messagesAPI = {
   getMessages: (campaignId) => api.get(`/messages/${campaignId}`),
-  sendMessage: (campaignId, text) => api.post(`/messages/${campaignId}`, { text }),
-};
-
-// Payments API
-export const paymentsAPI = {
-  // Credits
-  getCredits: () => api.get('/payments/credits'),
-  createUnlockOrder: () => api.post('/payments/unlock-pack/order'),
-  verifyUnlockPayment: (data) => api.post('/payments/unlock-pack/verify', data),
-  addDemoCredits: () => api.post('/payments/unlock-pack/demo'),
-  // Escrow
-  createEscrowOrder: (campaignId) => api.post(`/payments/escrow/${campaignId}/order`),
-  verifyEscrowPayment: (campaignId, data) => api.post(`/payments/escrow/${campaignId}/verify`, data),
-  demoEscrowPayment: (campaignId) => api.post(`/payments/escrow/${campaignId}/demo`),
+  sendMessage: (campaignId, content) => api.post(`/messages/${campaignId}`, { content }),
 };
 
 // Admin API
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
-  getBypassAttempts: () => api.get('/admin/bypass-attempts'),
-  banUser: (userId) => api.post(`/admin/users/${userId}/ban`),
-  unbanUser: (userId) => api.post(`/admin/users/${userId}/unban`),
-  revokeCredits: (brandId) => api.delete(`/admin/unlock-credits/${brandId}`),
+  getReports: () => api.get('/admin/reports'),
+  blacklistUser: (userId, reason) => api.post(`/admin/blacklist/${userId}?reason=${encodeURIComponent(reason)}`),
 };
 
-// Seed API
+// Seed API (for testing)
 export const seedAPI = {
   seed: () => api.post('/seed'),
 };
