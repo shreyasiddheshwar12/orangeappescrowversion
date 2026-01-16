@@ -121,10 +121,10 @@ const CreatorDashboard = () => {
     );
   }
 
-  const proposedCampaigns = campaigns.filter(c => c.campaignStatus === 'proposed');
-  const acceptedCampaigns = campaigns.filter(c => ['accepted', 'in_progress'].includes(c.campaignStatus));
-  const completedCampaigns = campaigns.filter(c => ['delivered', 'completed'].includes(c.campaignStatus));
-  const declinedCampaigns = campaigns.filter(c => ['declined', 'cancelled'].includes(c.campaignStatus));
+  const proposedCampaigns = campaigns.filter(c => c.status === 'pending' || c.campaignStatus === 'proposed');
+  const acceptedCampaigns = campaigns.filter(c => c.status === 'accepted' || ['accepted', 'in_progress'].includes(c.campaignStatus));
+  const completedCampaigns = campaigns.filter(c => c.status === 'completed' || ['delivered', 'completed'].includes(c.campaignStatus));
+  const declinedCampaigns = campaigns.filter(c => c.status === 'declined' || c.status === 'expired' || ['declined', 'cancelled'].includes(c.campaignStatus));
 
   return (
     <div className="min-h-screen bg-background">
