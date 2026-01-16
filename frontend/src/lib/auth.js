@@ -18,8 +18,10 @@ export const AuthProvider = ({ children }) => {
           setUser(response.data);
           localStorage.setItem('user', JSON.stringify(response.data));
         } catch (error) {
+          // Token invalid or expired - clear storage
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          setUser(null);
         }
       }
       setLoading(false);
@@ -46,9 +48,19 @@ export const AuthProvider = ({ children }) => {
     return userData;
   };
 
-  const logout = () => {
-    authAPI.logout();
+  const logout = async () => {
+    // Clear local storage first
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setUser(null);
+    
+    // Try to call logout API but don't fail if it errors
+    try {
+      await authAPI.logout();
+    } catch (error) {
+      // Ignore logout API errors - local state already cleared
+      console.log('Logout API call failed, but local state cleared');
+    }
   };
 
   const updateUser = (updates) => {
