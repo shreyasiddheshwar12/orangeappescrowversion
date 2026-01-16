@@ -85,7 +85,19 @@ const CreatorProfile = () => {
       setShowCampaignDialog(false);
       setCampaignForm({ title: '', brief: '', price: '', deliverables: '', timeline: '', isBarter: false, barterDetails: '' });
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to send campaign");
+      // Handle API error - ensure we get a string, not an object
+      const errorData = error.response?.data;
+      let errorMessage = "Failed to send campaign";
+      if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else if (errorData?.detail) {
+        errorMessage = typeof errorData.detail === 'string' ? errorData.detail : 
+                       Array.isArray(errorData.detail) ? errorData.detail.map(e => e.msg || e).join(', ') :
+                       "Failed to send campaign";
+      } else if (errorData?.message) {
+        errorMessage = typeof errorData.message === 'string' ? errorData.message : "Failed to send campaign";
+      }
+      toast.error(errorMessage);
     } finally {
       setSendingCampaign(false);
     }
