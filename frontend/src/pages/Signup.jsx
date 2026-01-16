@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth';
+import { getErrorMessage } from '../lib/api';
 import { toast } from 'sonner';
 
 const Signup = () => {
@@ -46,7 +47,7 @@ const Signup = () => {
       toast.success("Account created! Let's set up your profile ✨");
       navigate(role === 'creator' ? '/onboarding/creator' : '/onboarding/business');
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Failed to create account");
+      toast.error(getErrorMessage(error, "Failed to create account"));
     } finally {
       setLoading(false);
     }
