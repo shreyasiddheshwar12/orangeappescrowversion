@@ -101,15 +101,17 @@ Brand: brand1@orange.com / password123 (starts with 5 credits)
 ```
 
 ## What's Working (Jan 2026)
-1. ✅ Full authentication flow
+1. ✅ Full authentication flow with session persistence
 2. ✅ Creator and brand dashboards
 3. ✅ **Two-way marketplace discovery** (brands see creators, creators see brands)
-4. ✅ Credit-based unlock system
-5. ✅ Demo credits for testing
-6. ✅ Instagram verification (simulated)
-7. ✅ Admin statistics endpoint
-8. ✅ Responsive UI with Orange theme
-9. ✅ New creator onboarding properly adds to marketplace
+4. ✅ **Symmetric unlock flow** (both sides can unlock profiles with credits)
+5. ✅ Credit-based unlock system with proper decrement
+6. ✅ Demo credits for testing (Razorpay TEST MODE)
+7. ✅ Instagram verification (simulated)
+8. ✅ Admin statistics endpoint
+9. ✅ Responsive UI with Orange theme
+10. ✅ New creator/brand onboarding properly adds to marketplace
+11. ✅ Profile routes protected - no login redirect for authenticated users
 
 ## Pending Features (P1)
 1. ⏳ Two-way request flow (backend ready, frontend pending)
