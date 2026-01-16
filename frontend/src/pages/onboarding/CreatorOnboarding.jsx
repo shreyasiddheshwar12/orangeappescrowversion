@@ -13,7 +13,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { Switch } from '../../components/ui/switch';
 import { Badge } from '../../components/ui/badge';
 import { Progress } from '../../components/ui/progress';
-import { creatorAPI, uploadAPI, instagramAPI } from '../../lib/api';
+import { creatorAPI, uploadAPI, instagramAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
