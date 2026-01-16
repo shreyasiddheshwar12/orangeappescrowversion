@@ -590,8 +590,18 @@ async def create_creator_profile(profile: CreatorProfileCreate, current_user: di
         raise HTTPException(status_code=403, detail="Only creators can create creator profiles")
     
     existing = await db.creator_profiles.find_one({"userId": current_user["id"]})
+    user_record = await db.users.find_one({"id": current_user["id"]})
     now = datetime.now(timezone.utc).isoformat()
     profile_id = existing["id"] if existing else str(uuid.uuid4())
+    
+    # Use Instagram data from user record (set during verification) or existing profile
+    instagram_verified = user_record.get("instagramVerified", False) or (existing.get("instagramVerified", False) if existing else False)
+    instagram_user_id = user_record.get("instagramUserId") or (existing.get("instagramUserId") if existing else None)
+    instagram_username = user_record.get("instagramUsername") or (existing.get("instagramUsername") if existing else None)
+    
+    # Use followers/engagement from profile input or existing data
+    followers_count = profile.followersCount or (existing.get("followersCount", 0) if existing else 0)
+    engagement_rate = profile.engagementRate or (existing.get("engagementRate", 0) if existing else 0)
     
     profile_doc = {
         "id": profile_id,
@@ -599,11 +609,11 @@ async def create_creator_profile(profile: CreatorProfileCreate, current_user: di
         "name": profile.name,
         "bio": profile.bio or "",
         "location": profile.location or "",
-        "instagramUserId": existing.get("instagramUserId") if existing else None,
-        "instagramUsername": existing.get("instagramUsername") if existing else None,
-        "instagramVerified": existing.get("instagramVerified", False) if existing else False,
-        "followersCount": existing.get("followersCount", 0) if existing else 0,
-        "engagementRate": existing.get("engagementRate", 0) if existing else 0,
+        "instagramUserId": instagram_user_id,
+        "instagramUsername": instagram_username,
+        "instagramVerified": instagram_verified,
+        "followersCount": followers_count,
+        "engagementRate": engagement_rate,
         "niches": profile.niches or [],
         "isOpenToBarter": profile.isOpenToBarter or False,
         "rates": (profile.rates.model_dump() if profile.rates else RateInfo().model_dump()),
