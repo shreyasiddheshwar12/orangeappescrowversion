@@ -582,7 +582,7 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
           </>
         )}
         
-        {showDeliverButton && campaign.campaignStatus !== 'delivered' && (
+        {showDeliverButton && displayStatus !== 'delivered' && !isRequest && (
           <Button
             onClick={onDeliver}
             disabled={loading}
@@ -593,8 +593,8 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
           </Button>
         )}
         
-        {/* Chat available for all non-declined campaigns */}
-        {!['declined', 'cancelled'].includes(campaign.campaignStatus) && onChat && (
+        {/* Chat available for accepted campaigns */}
+        {!isRequest && displayStatus === 'accepted' && onChat && (
           <Button
             onClick={onChat}
             className={campaign.escrowStatus === 'paid' ? "btn-primary flex-1" : "btn-secondary flex-1"}
@@ -607,7 +607,7 @@ const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loadin
       </div>
       
       {/* Warning for unpaid escrow */}
-      {campaign.campaignStatus === 'accepted' && campaign.escrowStatus === 'pending' && (
+      {displayStatus === 'accepted' && campaign.escrowStatus === 'pending' && (
         <div className="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-200">
           <p className="text-sm text-orange-800 flex items-center gap-2">
             <Lock className="w-4 h-4" />
