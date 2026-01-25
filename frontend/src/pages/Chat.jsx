@@ -203,53 +203,16 @@ const Chat = () => {
                 <strong>Link:</strong> <a href={campaign.contentLink} target="_blank" rel="noopener noreferrer" className="underline">{campaign.contentLink}</a>
               </p>
             )}
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <Package className="w-4 h-4" />
-                  {campaign.deliverables}
-                </div>
-              )}
-              {campaign?.timeline && (
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <Clock className="w-4 h-4" />
-                  {campaign.timeline}
-                </div>
-              )}
-              {campaign?.isBarter && (
-                <Badge className="bg-accent/50">🤝 Barter Deal</Badge>
-              )}
-            </div>
-            
-            {/* Pay Escrow Button for Brands */}
-            {canPayEscrow && (
-              <div className="mt-4 pt-4 border-t border-orange-100">
-                <Button 
-                  onClick={handlePayEscrow} 
-                  className="w-full btn-primary"
-                  disabled={payingEscrow}
-                  data-testid="pay-escrow-btn"
-                >
-                  {payingEscrow ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <CreditCard className="w-4 h-4 mr-2" />
-                  )}
-                  Pay {formatPrice(campaign.price)} to Unlock Full Access
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Payment held in escrow. Released after you approve the delivery.
-                </p>
-              </div>
-            )}
           </div>
         </div>
       </div>
 
       {/* Chat Restriction Warning */}
-      {!escrowPaid && (
+      {!campaign?.identityUnlocked && (
         <div className="bg-orange-50 border-b border-orange-200 px-4 py-2">
           <div className="max-w-4xl mx-auto flex items-center gap-2 text-sm text-orange-800">
             <AlertTriangle className="w-4 h-4" />
-            <span>External contact sharing (Instagram, phone, etc.) is blocked until escrow payment</span>
+            <span>External contact sharing (Instagram, phone, etc.) is blocked until identity unlock</span>
           </div>
         </div>
       )}
@@ -264,8 +227,7 @@ const Chat = () => {
             </div>
           ) : (
             messages.map((message, idx) => {
-              const isOwnMessage = message.senderUserId === user?.id;
-              const isSystemMessage = message.senderUserId === 'system';
+              const isOwnMessage = message.senderId === user?.id;
               const showDateHeader = idx === 0 || 
                 formatDate(messages[idx - 1].createdAt) !== formatDate(message.createdAt);
               
