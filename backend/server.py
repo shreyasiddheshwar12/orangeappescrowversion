@@ -823,9 +823,8 @@ async def get_outgoing_campaigns(current_user: dict = Depends(get_current_user))
     
     result = []
     for c in campaigns:
-        if not c.get("identityUnlocked", False):
-            c["receiverName"] = "Creator" if c["receiverType"] == "creator" else "Brand"
-        result.append(CampaignResponse(**c))
+        masked = mask_campaign_identity(c, current_user["id"])
+        result.append(CampaignResponse(**masked))
     
     return result
 
@@ -841,14 +840,8 @@ async def get_campaign(campaign_id: str, current_user: dict = Depends(get_curren
     if campaign["senderUserId"] != current_user["id"] and campaign["receiverUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Mask identity if payment not made
-    if not campaign.get("identityUnlocked", False):
-        if campaign["senderUserId"] != current_user["id"]:
-            campaign["senderName"] = "Brand" if campaign["senderType"] == "business" else "Creator"
-        if campaign["receiverUserId"] != current_user["id"]:
-            campaign["receiverName"] = "Creator" if campaign["receiverType"] == "creator" else "Brand"
-    
-    return CampaignResponse(**campaign)
+    masked = mask_campaign_identity(campaign, current_user["id"])
+    return CampaignResponse(**masked)
 
 @campaign_router.patch("/{campaign_id}/respond")
 async def respond_to_campaign(
@@ -865,31 +858,35 @@ async def respond_to_campaign(
     if campaign["receiverUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the receiver can respond")
     
-    if campaign["status"] != "pending":
+    if campaign["status"] != "requested":
         raise HTTPException(status_code=400, detail="Campaign already responded to")
     
     now = datetime.now(timezone.utc).isoformat()
     
     if action == "accept":
-        new_status = "awaiting_payment"
+        new_status = "accepted"
         await db.campaigns.update_one(
             {"id": campaign_id},
             {"$set": {"status": new_status, "updatedAt": now}}
         )
-        return {"message": "Campaign accepted! Waiting for payment commitment.", "status": new_status}
+        return {"message": "Request accepted! Waiting for brand to pay.", "status": new_status}
     else:
         await db.campaigns.update_one(
             {"id": campaign_id},
-            {"$set": {"status": "rejected", "updatedAt": now}}
+            {"$set": {"status": "cancelled", "updatedAt": now}}
         )
-        return {"message": "Campaign rejected.", "status": "rejected"}
+        return {"message": "Request rejected.", "status": "cancelled"}
 
 @campaign_router.post("/{campaign_id}/pay")
 async def pay_for_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
     """
     Pay for campaign - unlocks identity and chat.
     - Paid collab: Full escrow amount
-    - Barter collab: Facilitation fee (₹149)
+    - Barter collab: 10% of declared product/service value
+    
+    IDENTITY UNLOCK RULES:
+    - For PAID collabs: Identity unlocks AFTER payment
+    - For BARTER collabs: Identity unlocks AFTER link verification (not payment)
     """
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     
@@ -899,21 +896,21 @@ async def pay_for_campaign(campaign_id: str, current_user: dict = Depends(get_cu
     if campaign["senderUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the sender can pay")
     
-    if campaign["status"] != "awaiting_payment":
-        raise HTTPException(status_code=400, detail="Campaign not in awaiting_payment status")
+    if campaign["status"] != "accepted":
+        raise HTTPException(status_code=400, detail="Campaign must be accepted before payment")
     
     if campaign["paymentStatus"] == "paid":
         raise HTTPException(status_code=400, detail="Already paid")
     
     now = datetime.now(timezone.utc).isoformat()
     
-    # Calculate payment amount
+    # Calculate payment amount based on campaign type
     if campaign["campaignType"] == "paid":
-        amount = campaign["escrowAmount"]
+        amount = campaign.get("escrowAmount", 0) or campaign.get("budget", 0)
         payment_type = "escrow"
-    else:  # barter
-        amount = BARTER_FACILITATION_FEE / 100  # Convert paise to rupees
-        payment_type = "facilitation_fee"
+    else:  # barter_product or barter_service
+        amount = campaign.get("barterFee", 0)
+        payment_type = "barter_fee"
     
     # In TEST MODE, simulate successful payment
     payment_record = {
@@ -928,24 +925,48 @@ async def pay_for_campaign(campaign_id: str, current_user: dict = Depends(get_cu
     }
     await db.payments.insert_one(payment_record)
     
-    # Update campaign - UNLOCK IDENTITY AND CHAT
+    # IDENTITY UNLOCK LOGIC:
+    # - Paid collabs: Identity unlocks NOW after payment
+    # - Barter collabs: Identity stays locked until link is verified
+    is_paid_collab = campaign["campaignType"] == "paid"
+    identity_unlocked = is_paid_collab  # Only unlock for paid collabs
+    
     await db.campaigns.update_one(
         {"id": campaign_id},
         {"$set": {
-            "status": "active",
+            "status": "paid",
             "paymentStatus": "paid",
-            "identityUnlocked": True,
-            "chatEnabled": True,
+            "identityUnlocked": identity_unlocked,
+            "chatEnabled": True,  # Chat enabled for all after payment
             "updatedAt": now
         }}
     )
     
-    # Get actual names for response
-    sender_profile_collection = "brand_profiles" if campaign["senderType"] == "business" else "creator_profiles"
-    receiver_profile_collection = "creator_profiles" if campaign["receiverType"] == "creator" else "brand_profiles"
+    response = {
+        "success": True,
+        "status": "paid",
+        "chatEnabled": True,
+        "amountPaid": amount,
+        "paymentType": payment_type
+    }
     
-    sender_profile = await db[sender_profile_collection].find_one({"id": campaign["senderId"]}, {"_id": 0})
-    receiver_profile = await db[receiver_profile_collection].find_one({"id": campaign["receiverId"]}, {"_id": 0})
+    if identity_unlocked:
+        # For paid collabs, reveal Instagram handles
+        sender_profile_collection = "brand_profiles" if campaign["senderType"] == "business" else "creator_profiles"
+        receiver_profile_collection = "creator_profiles" if campaign["receiverType"] == "creator" else "brand_profiles"
+        
+        sender_profile = await db[sender_profile_collection].find_one({"id": campaign["senderId"]}, {"_id": 0})
+        receiver_profile = await db[receiver_profile_collection].find_one({"id": campaign["receiverId"]}, {"_id": 0})
+        
+        response["identityUnlocked"] = True
+        response["senderInstagram"] = sender_profile.get("instagramUsername") if sender_profile else None
+        response["receiverInstagram"] = receiver_profile.get("instagramUsername") if receiver_profile else None
+        response["message"] = "Payment successful! Identity and chat unlocked."
+    else:
+        response["identityUnlocked"] = False
+        response["message"] = "Payment successful! Chat enabled. Identity will unlock after you verify the content link."
+    
+    return response
     
     sender_instagram = sender_profile.get("instagramUsername") if sender_profile else None
     receiver_instagram = receiver_profile.get("instagramUsername") if receiver_profile else None
