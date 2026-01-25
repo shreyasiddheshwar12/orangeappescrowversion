@@ -526,6 +526,35 @@ async def get_creator_profile(current_user: dict = Depends(get_current_user)):
     
     return CreatorProfileFull(**profile)
 
+@creator_router.post("/subscription/toggle")
+async def toggle_creator_visibility(
+    visible: bool = Query(..., description="Set visibility status"),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Toggle creator visibility in marketplace.
+    In production: This would require ₹50/month subscription payment.
+    For MVP: This is MOCKED - just a toggle.
+    """
+    if current_user["role"] != "creator":
+        raise HTTPException(status_code=403, detail="Only creators can toggle visibility")
+    
+    await db.creator_profiles.update_one(
+        {"userId": current_user["id"]},
+        {"$set": {
+            "isVisible": visible,
+            "subscriptionActive": visible,
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    return {
+        "success": True,
+        "isVisible": visible,
+        "message": f"Your profile is now {'visible' if visible else 'hidden'} to brands.",
+        "note": "Subscription payment is MOCKED for MVP"
+    }
+
 # ============== BRAND PROFILE ENDPOINTS ==============
 
 @business_router.post("/profile", response_model=BrandProfileFull)
