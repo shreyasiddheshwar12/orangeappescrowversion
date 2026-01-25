@@ -185,4 +185,15 @@ export const seedAPI = {
   seed: () => api.post('/seed'),
 };
 
+// Legacy APIs for backward compatibility
+export const paymentsAPI = {
+  // Placeholder - payments now handled via campaignAPI.pay()
+  createOrder: () => Promise.resolve({ data: {} }),
+};
+
+export const requestsAPI = {
+  // Legacy - use campaignAPI instead
+  respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
+};
+
 export default api;
