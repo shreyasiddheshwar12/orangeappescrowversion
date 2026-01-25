@@ -1425,7 +1425,7 @@ async def blacklist_user(user_id: str, reason: str = Query(...), current_user: d
 async def seed_database():
     """Create demo data for testing"""
     # Clear existing data
-    for collection in ["users", "creator_profiles", "brand_profiles", "campaigns", "messages", "payments", "reports"]:
+    for collection in ["users", "creator_profiles", "brand_profiles", "campaigns", "messages", "payments", "reports", "ratings", "payouts"]:
         await db[collection].delete_many({})
     
     now = datetime.now(timezone.utc).isoformat()
@@ -1444,7 +1444,7 @@ async def seed_database():
         "createdAt": now
     })
     
-    # Create sample creators
+    # Create sample creators (all visible by default - subscription MOCKED)
     creators = [
         {"name": "Priya Sharma", "niche": "Fashion", "language": "Hindi", "contentType": "Reels", "location": "Mumbai", "reelPrice": 15000, "storyPrice": 5000, "engagement": 8.5},
         {"name": "Arjun Kapoor", "niche": "Fitness", "language": "English", "contentType": "Reels, Stories", "location": "Delhi", "reelPrice": 12000, "storyPrice": 4000, "engagement": 6.2},
@@ -1492,6 +1492,10 @@ async def seed_database():
             "engagementRate": c["engagement"],
             "profilePhotoUrl": "",
             "isBlacklisted": False,
+            "isVisible": True,  # Subscription active (MOCKED)
+            "subscriptionActive": True,
+            "rating": None,
+            "totalCollabs": 0,
             "createdAt": now,
             "updatedAt": now
         })
@@ -1536,6 +1540,7 @@ async def seed_database():
             "instagramUserId": f"ig_{uuid.uuid4().hex[:8]}",
             "instagramUsername": f"@{b['name'].lower().replace(' ', '_')}",
             "profilePhotoUrl": "",
+            "rating": None,
             "createdAt": now,
             "updatedAt": now
         })
@@ -1548,6 +1553,11 @@ async def seed_database():
             "admin": "admin@orange.com / admin123",
             "creator": "creator1@orange.com / password123",
             "brand": "brand1@orange.com / password123"
+        },
+        "notes": {
+            "subscription": "Creator visibility subscription is MOCKED - all creators visible by default",
+            "payments": "All payments are in TEST MODE - no real money",
+            "instagram": "Instagram verification is SIMULATED"
         }
     }
 
