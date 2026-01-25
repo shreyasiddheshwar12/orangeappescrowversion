@@ -594,11 +594,13 @@ async def discover_creators(
     """
     FREE discovery of creators - shows PARTIAL info only.
     No identity (name, Instagram) revealed until payment.
+    Only shows creators with active subscription (isVisible=True).
     """
-    # Build query - only show verified, non-blacklisted creators
+    # Build query - only show verified, non-blacklisted, VISIBLE creators
     query = {
         "instagramVerified": True,
-        "isBlacklisted": {"$ne": True}
+        "isBlacklisted": {"$ne": True},
+        "isVisible": {"$ne": False}  # Must be visible (subscription active)
     }
     
     if niche:
@@ -618,7 +620,7 @@ async def discover_creators(
     if maxPrice is not None:
         creators = [c for c in creators if c.get("reelPrice", 0) <= maxPrice]
     
-    # Return PARTIAL data only - no identity
+    # Return PARTIAL data only - no identity (name, instagram NEVER shown here)
     discovery_list = []
     for c in creators:
         discovery_list.append(CreatorDiscovery(
