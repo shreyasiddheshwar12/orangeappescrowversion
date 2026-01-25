@@ -398,12 +398,15 @@ const BusinessDashboard = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="marketplace" className="w-full">
-          <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
-            <TabsTrigger value="marketplace" className="rounded-full data-[state=active]:bg-white px-6">
-              🍊 Creator Marketplace
+          <TabsList className="mb-6 bg-muted/50 p-1 rounded-full flex-wrap">
+            <TabsTrigger value="marketplace" className="rounded-full data-[state=active]:bg-white px-4">
+              🍊 Find Creators
             </TabsTrigger>
-            <TabsTrigger value="campaigns" className="rounded-full data-[state=active]:bg-white px-6">
-              📤 My Campaigns ({campaigns.length})
+            <TabsTrigger value="incoming" className="rounded-full data-[state=active]:bg-white px-4">
+              📥 Incoming ({pendingIncoming.length})
+            </TabsTrigger>
+            <TabsTrigger value="campaigns" className="rounded-full data-[state=active]:bg-white px-4">
+              📋 All Campaigns ({allCampaigns.length})
             </TabsTrigger>
           </TabsList>
 
