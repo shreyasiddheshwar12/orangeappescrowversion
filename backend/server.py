@@ -1021,62 +1021,141 @@ async def confirm_product_received(campaign_id: str, current_user: dict = Depend
     
     return {"message": "Product receipt confirmed", "success": True}
 
-@campaign_router.post("/{campaign_id}/submit-content")
-async def submit_content(
+@campaign_router.post("/{campaign_id}/submit-link")
+async def submit_content_link(
     campaign_id: str,
-    contentLink: str = Query(...),
+    contentLink: str = Query(..., description="Instagram reel or story link"),
     current_user: dict = Depends(get_current_user)
 ):
-    """Creator submits content link for review"""
+    """
+    Creator submits reel/story link for verification.
+    This is MANDATORY for completing any collaboration.
+    """
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     # Determine who is the creator in this campaign
+    is_creator = False
     if campaign["receiverType"] == "creator" and campaign["receiverUserId"] == current_user["id"]:
-        pass  # Creator is receiver
+        is_creator = True
     elif campaign["senderType"] == "creator" and campaign["senderUserId"] == current_user["id"]:
-        pass  # Creator is sender
-    else:
-        raise HTTPException(status_code=403, detail="Only the creator can submit content")
+        is_creator = True
     
-    if campaign["status"] != "active":
-        raise HTTPException(status_code=400, detail="Campaign must be active to submit content")
+    if not is_creator:
+        raise HTTPException(status_code=403, detail="Only the creator can submit content link")
+    
+    if campaign["status"] not in ["paid", "in_progress"]:
+        raise HTTPException(status_code=400, detail="Campaign must be paid/in_progress to submit link")
     
     await db.campaigns.update_one(
         {"id": campaign_id},
         {"$set": {
             "contentLink": contentLink,
-            "status": "content_submitted",
+            "status": "link_submitted",
             "updatedAt": datetime.now(timezone.utc).isoformat()
         }}
     )
     
-    return {"message": "Content submitted for review", "success": True}
+    return {"message": "Reel/Story link submitted for verification", "success": True, "contentLink": contentLink}
 
-@campaign_router.post("/{campaign_id}/approve")
-async def approve_content(campaign_id: str, current_user: dict = Depends(get_current_user)):
-    """Brand approves content and releases escrow"""
+@campaign_router.post("/{campaign_id}/verify-link")
+async def verify_content_link(
+    campaign_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Brand verifies the submitted reel/story link.
+    For BARTER collabs: This unlocks identity (Instagram handles).
+    For PAID collabs: Identity was already unlocked at payment.
+    """
     campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
     
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     # Determine who is the brand in this campaign
+    is_brand = False
     if campaign["senderType"] == "business" and campaign["senderUserId"] == current_user["id"]:
-        pass  # Brand is sender
+        is_brand = True
     elif campaign["receiverType"] == "brand" and campaign["receiverUserId"] == current_user["id"]:
-        pass  # Brand is receiver (rare case)
-    else:
-        raise HTTPException(status_code=403, detail="Only the brand can approve content")
+        is_brand = True
     
-    if campaign["status"] != "content_submitted":
-        raise HTTPException(status_code=400, detail="No content to approve")
+    if not is_brand:
+        raise HTTPException(status_code=403, detail="Only the brand can verify the link")
+    
+    if campaign["status"] != "link_submitted":
+        raise HTTPException(status_code=400, detail="No link to verify")
+    
+    if not campaign.get("contentLink"):
+        raise HTTPException(status_code=400, detail="No content link found")
     
     now = datetime.now(timezone.utc).isoformat()
     
-    # Complete the campaign
+    # For BARTER collabs, this is when identity unlocks
+    is_barter = campaign["campaignType"] in ["barter_product", "barter_service"]
+    
+    update_data = {
+        "linkVerified": True,
+        "status": "link_verified",
+        "updatedAt": now
+    }
+    
+    response = {
+        "success": True,
+        "message": "Link verified!",
+        "status": "link_verified",
+        "linkVerified": True
+    }
+    
+    if is_barter and not campaign.get("identityUnlocked", False):
+        # Unlock identity for barter collabs
+        update_data["identityUnlocked"] = True
+        
+        # Get Instagram handles
+        sender_profile_collection = "brand_profiles" if campaign["senderType"] == "business" else "creator_profiles"
+        receiver_profile_collection = "creator_profiles" if campaign["receiverType"] == "creator" else "brand_profiles"
+        
+        sender_profile = await db[sender_profile_collection].find_one({"id": campaign["senderId"]}, {"_id": 0})
+        receiver_profile = await db[receiver_profile_collection].find_one({"id": campaign["receiverId"]}, {"_id": 0})
+        
+        response["identityUnlocked"] = True
+        response["senderInstagram"] = sender_profile.get("instagramUsername") if sender_profile else None
+        response["receiverInstagram"] = receiver_profile.get("instagramUsername") if receiver_profile else None
+        response["message"] = "Link verified! Identity unlocked - you can now see Instagram handles."
+    
+    await db.campaigns.update_one({"id": campaign_id}, {"$set": update_data})
+    
+    return response
+
+@campaign_router.post("/{campaign_id}/complete")
+async def complete_campaign(campaign_id: str, current_user: dict = Depends(get_current_user)):
+    """
+    Brand marks campaign as completed.
+    For PAID collabs: Releases escrow to creator.
+    Both parties can now submit ratings.
+    """
+    campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    # Determine who is the brand in this campaign
+    is_brand = False
+    if campaign["senderType"] == "business" and campaign["senderUserId"] == current_user["id"]:
+        is_brand = True
+    elif campaign["receiverType"] == "brand" and campaign["receiverUserId"] == current_user["id"]:
+        is_brand = True
+    
+    if not is_brand:
+        raise HTTPException(status_code=403, detail="Only the brand can complete the campaign")
+    
+    if campaign["status"] != "link_verified":
+        raise HTTPException(status_code=400, detail="Link must be verified before completing")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
     await db.campaigns.update_one(
         {"id": campaign_id},
         {"$set": {
@@ -1086,24 +1165,101 @@ async def approve_content(campaign_id: str, current_user: dict = Depends(get_cur
     )
     
     # For paid collabs, record payout (simulated)
+    payout_amount = 0
     if campaign["campaignType"] == "paid":
+        payout_amount = campaign.get("creatorPayout", 0)
         payout_record = {
             "id": str(uuid.uuid4()),
             "campaignId": campaign_id,
             "creatorUserId": campaign["receiverUserId"] if campaign["receiverType"] == "creator" else campaign["senderUserId"],
-            "amount": campaign["creatorPayout"],
+            "amount": payout_amount,
             "status": "released",
             "mode": "test",
             "createdAt": now
         }
         await db.payouts.insert_one(payout_record)
     
+    # Update creator stats
+    creator_user_id = campaign["receiverUserId"] if campaign["receiverType"] == "creator" else campaign["senderUserId"]
+    await db.creator_profiles.update_one(
+        {"userId": creator_user_id},
+        {"$inc": {"totalCollabs": 1}}
+    )
+    
     return {
-        "message": "Content approved! Campaign completed.",
         "success": True,
+        "message": "Campaign completed! Escrow released." if campaign["campaignType"] == "paid" else "Campaign completed!",
         "status": "completed",
-        "payoutAmount": campaign.get("creatorPayout", 0) if campaign["campaignType"] == "paid" else 0
+        "payoutAmount": payout_amount
     }
+
+# ============== RATINGS & FEEDBACK ==============
+
+@campaign_router.post("/{campaign_id}/rate")
+async def submit_rating(
+    campaign_id: str,
+    rating: int = Query(..., ge=1, le=5, description="1-5 star rating"),
+    feedback: str = Query(..., min_length=10, description="Feedback comment (mandatory)"),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Submit rating and feedback after campaign completion.
+    Both creator and brand must submit feedback.
+    """
+    campaign = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
+    
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    if campaign["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Can only rate completed campaigns")
+    
+    if campaign["senderUserId"] != current_user["id"] and campaign["receiverUserId"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="You're not part of this campaign")
+    
+    # Check if already rated
+    existing_rating = await db.ratings.find_one({
+        "campaignId": campaign_id,
+        "raterId": current_user["id"]
+    })
+    if existing_rating:
+        raise HTTPException(status_code=400, detail="You've already rated this campaign")
+    
+    # Determine rater and target
+    rater_type = current_user["role"]
+    if current_user["id"] == campaign["senderUserId"]:
+        target_id = campaign["receiverUserId"]
+        target_type = "creator" if campaign["receiverType"] == "creator" else "brand"
+    else:
+        target_id = campaign["senderUserId"]
+        target_type = "brand" if campaign["senderType"] == "business" else "creator"
+    
+    rating_doc = {
+        "id": str(uuid.uuid4()),
+        "campaignId": campaign_id,
+        "raterId": current_user["id"],
+        "raterType": rater_type,
+        "targetId": target_id,
+        "targetType": target_type,
+        "rating": rating,
+        "feedback": feedback,
+        "createdAt": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.ratings.insert_one(rating_doc)
+    
+    # Update target's average rating
+    all_ratings = await db.ratings.find({"targetId": target_id}).to_list(1000)
+    avg_rating = sum(r["rating"] for r in all_ratings) / len(all_ratings) if all_ratings else 0
+    
+    # Update profile
+    collection = "creator_profiles" if target_type == "creator" else "brand_profiles"
+    await db[collection].update_one(
+        {"userId": target_id},
+        {"$set": {"rating": round(avg_rating, 2)}}
+    )
+    
+    return {"success": True, "message": "Rating submitted!", "rating": rating}
 
 @campaign_router.post("/{campaign_id}/report")
 async def report_campaign_issue(
@@ -1119,6 +1275,12 @@ async def report_campaign_issue(
     
     if campaign["senderUserId"] != current_user["id"] and campaign["receiverUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="You're not part of this campaign")
+    
+    # Update campaign to disputed status
+    await db.campaigns.update_one(
+        {"id": campaign_id},
+        {"$set": {"status": "disputed", "updatedAt": datetime.now(timezone.utc).isoformat()}}
+    )
     
     report = {
         "id": str(uuid.uuid4()),
