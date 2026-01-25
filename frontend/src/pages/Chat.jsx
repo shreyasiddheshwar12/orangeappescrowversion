@@ -74,62 +74,13 @@ const Chat = () => {
       setNewMessage('');
       
       // Check if message was blocked
-      if (response.data.isBlocked) {
-        toast.warning("Message blocked - external contact sharing is not allowed before payment");
+      if (response.data.blocked) {
+        toast.warning("Message blocked - external contact sharing is not allowed");
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to send message"));
     } finally {
       setSending(false);
-    }
-  };
-
-  const handlePayEscrow = async () => {
-    setPayingEscrow(true);
-    try {
-      const orderRes = await paymentsAPI.createEscrowOrder(requestId);
-      const { orderId, amount, keyId } = orderRes.data;
-
-      if (!keyId) {
-        toast.error("Payment not configured. Contact admin.");
-        setPayingEscrow(false);
-        return;
-      }
-
-      const options = {
-        key: keyId,
-        amount: amount,
-        currency: "INR",
-        name: "Orange",
-        description: `Campaign Payment - ${campaign.title}`,
-        order_id: orderId,
-        handler: async (response) => {
-          try {
-            await paymentsAPI.verifyEscrowPayment(requestId, {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature
-            });
-            toast.success("Payment successful! Full access unlocked 🎉");
-            loadData(); // Refresh campaign
-          } catch (err) {
-            toast.error("Payment verification failed");
-          }
-        },
-        prefill: {
-          email: user?.email || ""
-        },
-        theme: {
-          color: "#FF6B00"
-        }
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to create payment order"));
-    } finally {
-      setPayingEscrow(false);
     }
   };
 
