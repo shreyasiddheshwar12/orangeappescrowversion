@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Send, Loader2, DollarSign, Clock, Package, Lock, AlertTriangle, CreditCard } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Clock, Lock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
-import { campaignsAPI, messagesAPI, paymentsAPI, getErrorMessage } from '../lib/api';
+import { campaignAPI, messagesAPI, getErrorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { toast } from 'sonner';
 
