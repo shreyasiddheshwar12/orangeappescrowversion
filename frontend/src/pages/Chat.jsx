@@ -120,12 +120,34 @@ const Chat = () => {
 
   const isCreator = user?.role === 'creator';
   const isBrand = user?.role === 'business';
-  const otherParty = isCreator 
-    ? { name: campaign?.brandName, photo: null }
-    : { name: campaign?.creatorName, photo: null };
+  const otherPartyName = isCreator ? campaign?.senderName : campaign?.receiverName;
+  const otherPartyInstagram = isCreator ? campaign?.senderInstagram : campaign?.receiverInstagram;
   
-  const escrowPaid = campaign?.escrowStatus === 'paid' || campaign?.escrowStatus === 'released';
-  const canPayEscrow = isBrand && campaign?.campaignStatus === 'accepted' && campaign?.escrowStatus === 'pending';
+  // Check if chat is enabled (after payment)
+  if (!campaign?.chatEnabled) {
+    return (
+      <div className="h-screen flex flex-col bg-background">
+        <header className="border-b border-orange-100 bg-white/80 backdrop-blur-sm px-4 py-3">
+          <div className="max-w-4xl mx-auto flex items-center gap-4">
+            <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate(-1)}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <h2 className="font-semibold">Chat</h2>
+          </div>
+        </header>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-8">
+            <Lock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+            <h3 className="font-heading text-xl font-bold mb-2">Chat Not Available</h3>
+            <p className="text-muted-foreground">Chat will unlock after payment is completed.</p>
+            <Button onClick={() => navigate(-1)} className="mt-4 btn-primary">
+              Go Back
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -137,29 +159,30 @@ const Chat = () => {
           </Button>
           
           <Avatar className="w-10 h-10 border-2 border-orange-100">
-            <AvatarImage src={otherParty.photo} />
             <AvatarFallback className="bg-primary/10 text-primary">
-              {otherParty.name?.[0]}
+              {otherPartyName?.[0] || '?'}
             </AvatarFallback>
           </Avatar>
           
           <div className="flex-1">
-            <h2 className="font-semibold">{otherParty.name}</h2>
-            <p className="text-xs text-muted-foreground">{campaign?.title}</p>
+            <h2 className="font-semibold">{otherPartyName}</h2>
+            {campaign?.identityUnlocked && otherPartyInstagram && (
+              <p className="text-xs text-green-600">IG: {otherPartyInstagram}</p>
+            )}
           </div>
           
           <div className="flex gap-2">
             <Badge className={
-              campaign?.campaignStatus === 'accepted' ? 'bg-green-100 text-green-800' :
-              campaign?.campaignStatus === 'proposed' ? 'bg-blue-100 text-blue-800' :
-              campaign?.campaignStatus === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+              campaign?.status === 'completed' ? 'bg-green-500 text-white' :
+              campaign?.status === 'paid' ? 'bg-purple-100 text-purple-800' :
+              campaign?.status === 'link_submitted' ? 'bg-orange-100 text-orange-800' :
               'bg-gray-100 text-gray-800'
             }>
-              {campaign?.campaignStatus?.replace('_', ' ')}
+              {campaign?.status?.replace('_', ' ')}
             </Badge>
-            <Badge className={escrowPaid ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}>
-              {escrowPaid ? '💰 Paid' : '⏳ Awaiting Payment'}
-            </Badge>
+            {campaign?.identityUnlocked && (
+              <Badge className="bg-green-100 text-green-800">🔓 Identity Unlocked</Badge>
+            )}
           </div>
         </div>
       </header>
@@ -168,16 +191,18 @@ const Chat = () => {
       <div className="bg-muted/30 border-b border-orange-100 px-4 py-3">
         <div className="max-w-4xl mx-auto">
           <div className="card-orange p-4">
-            <h3 className="font-heading font-bold mb-2">{campaign?.title}</h3>
-            <p className="text-sm text-muted-foreground mb-3">{campaign?.brief}</p>
-            <div className="flex flex-wrap gap-4 text-sm">
-              {campaign?.price > 0 && (
-                <div className="flex items-center gap-1 text-primary font-semibold">
-                  <DollarSign className="w-4 h-4" />
-                  {formatPrice(campaign.price)}
-                </div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="capitalize font-semibold">{campaign?.campaignType?.replace('_', ' ')}</span>
+              {campaign?.campaignType === 'paid' && (
+                <span className="text-primary font-bold">{formatPrice(campaign?.budget)}</span>
               )}
-              {campaign?.deliverables && (
+            </div>
+            <p className="text-sm text-muted-foreground mb-2"><strong>Deliverables:</strong> {campaign?.deliverables}</p>
+            {campaign?.contentLink && (
+              <p className="text-sm text-blue-600">
+                <strong>Link:</strong> <a href={campaign.contentLink} target="_blank" rel="noopener noreferrer" className="underline">{campaign.contentLink}</a>
+              </p>
+            )}
                 <div className="flex items-center gap-1 text-muted-foreground">
                   <Package className="w-4 h-4" />
                   {campaign.deliverables}
