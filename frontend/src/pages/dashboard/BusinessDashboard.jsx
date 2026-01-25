@@ -212,8 +212,12 @@ const BusinessDashboard = () => {
       }
       
       // Refresh campaigns
-      const campaignsRes = await campaignAPI.getOutgoing();
-      setCampaigns(campaignsRes.data);
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
       setShowCampaignModal(false);
     } catch (error) {
       toast.error(getErrorMessage(error, "Payment failed"));
@@ -233,8 +237,12 @@ const BusinessDashboard = () => {
       }
       
       // Refresh campaigns
-      const campaignsRes = await campaignAPI.getOutgoing();
-      setCampaigns(campaignsRes.data);
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
       setShowCampaignModal(false);
     } catch (error) {
       toast.error(getErrorMessage(error, "Verification failed"));
@@ -250,8 +258,12 @@ const BusinessDashboard = () => {
       toast.success(res.data.message || "Campaign completed!");
       
       // Refresh campaigns
-      const campaignsRes = await campaignAPI.getOutgoing();
-      setCampaigns(campaignsRes.data);
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
       setShowCampaignModal(false);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to complete"));
