@@ -241,53 +241,41 @@ const Chat = () => {
                     </div>
                   )}
                   
-                  {isSystemMessage ? (
-                    // System warning message
-                    <div className="flex justify-center">
-                      <div className="bg-orange-50 border border-orange-200 rounded-xl px-4 py-2 max-w-md">
-                        <p className="text-sm text-orange-800 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4" />
-                          {message.text}
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`flex gap-2 max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
+                      {!isOwnMessage && (
+                        <Avatar className="w-8 h-8 border border-orange-100">
+                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                            {otherPartyName?.[0] || '?'}
+                          </AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div>
+                        <div className={`px-4 py-2 rounded-2xl ${
+                          message.blocked 
+                            ? 'bg-red-50 border border-red-200 text-red-800'
+                            : isOwnMessage 
+                              ? 'bg-primary text-white rounded-tr-none' 
+                              : 'bg-white border border-orange-100 rounded-tl-none'
+                        }`}>
+                          {message.blocked && (
+                            <div className="flex items-center gap-1 text-xs mb-1 text-red-600">
+                              <Lock className="w-3 h-3" />
+                              Blocked
+                            </div>
+                          )}
+                          <p className="text-sm">{message.content}</p>
+                        </div>
+                        <p className={`text-xs text-muted-foreground mt-1 ${isOwnMessage ? 'text-right' : ''}`}>
+                          {formatTime(message.createdAt)}
                         </p>
                       </div>
                     </div>
-                  ) : (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`flex gap-2 max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
-                        {!isOwnMessage && (
-                          <Avatar className="w-8 h-8 border border-orange-100">
-                            <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                              {message.senderName?.[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                        )}
-                        <div>
-                          <div className={`px-4 py-2 rounded-2xl ${
-                            message.isBlocked 
-                              ? 'bg-red-50 border border-red-200 text-red-800'
-                              : isOwnMessage 
-                                ? 'bg-primary text-white rounded-tr-none' 
-                                : 'bg-white border border-orange-100 rounded-tl-none'
-                          }`}>
-                            {message.isBlocked && (
-                              <div className="flex items-center gap-1 text-xs mb-1 text-red-600">
-                                <Lock className="w-3 h-3" />
-                                Blocked
-                              </div>
-                            )}
-                            <p className="text-sm">{message.text}</p>
-                          </div>
-                          <p className={`text-xs text-muted-foreground mt-1 ${isOwnMessage ? 'text-right' : ''}`}>
-                            {formatTime(message.createdAt)}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
+                  </motion.div>
                 </div>
               );
             })
@@ -302,7 +290,7 @@ const Chat = () => {
           <Input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={escrowPaid ? "Type your message..." : "Type your message (external contacts blocked)..."}
+            placeholder={campaign?.identityUnlocked ? "Type your message..." : "Type your message (external contacts blocked)..."}
             className="flex-1 input-orange"
             disabled={sending}
             data-testid="message-input"
