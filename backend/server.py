@@ -146,6 +146,10 @@ class CreatorProfileFull(BaseModel):
     engagementRate: float
     profilePhotoUrl: str
     isBlacklisted: bool = False
+    isVisible: bool = True  # Subscription-based visibility (MOCKED for MVP)
+    subscriptionActive: bool = True  # For ₹50/month visibility subscription
+    rating: Optional[float] = None
+    totalCollabs: int = 0
 
 # Brand Models
 class BrandProfileCreate(BaseModel):
