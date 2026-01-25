@@ -289,6 +289,7 @@ class InstagramVerifyRequest(BaseModel):
 class InstagramVerifyResponse(BaseModel):
     success: bool
     instagramUserId: str
+    followersCount: int  # Simulated follower count
     engagementRate: float
     message: str
 
