@@ -105,9 +105,10 @@ export const marketplaceAPI = {
 };
 
 // Campaign API - Core collaboration flow
-// Flow: Create Request -> Accept/Reject -> Pay -> Unlock Identity + Chat -> Submit Content -> Approve -> Complete
+// Flow: Create Request -> Accept/Reject -> Pay -> (Submit Link -> Verify Link) -> Complete -> Rate
 export const campaignAPI = {
   // Create a new campaign request (sender initiates)
+  // campaignType: 'paid' | 'barter_product' | 'barter_service'
   create: (data) => api.post('/campaigns/', data),
   
   // Get campaigns where current user is the RECEIVER (incoming requests)
@@ -122,9 +123,9 @@ export const campaignAPI = {
   // Respond to a campaign request (receiver accepts or rejects)
   respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
   
-  // Pay for campaign (unlocks identity + chat)
-  // - Paid collab: Full escrow amount
-  // - Barter collab: Facilitation fee (₹149)
+  // Pay for campaign
+  // - Paid collab: Full escrow amount -> identity unlocks immediately
+  // - Barter collab: 10% fee -> identity unlocks after link verification
   pay: (id) => api.post(`/campaigns/${id}/pay`),
   
   // Add shipping details for barter collab (brand provides)
@@ -133,11 +134,17 @@ export const campaignAPI = {
   // Creator confirms product received (barter collab)
   confirmReceipt: (id) => api.post(`/campaigns/${id}/product-received`),
   
-  // Creator submits content link for review
-  submitContent: (id, link) => api.post(`/campaigns/${id}/submit-content?contentLink=${encodeURIComponent(link)}`),
+  // Creator submits reel/story link (MANDATORY for all collabs)
+  submitLink: (id, link) => api.post(`/campaigns/${id}/submit-link?contentLink=${encodeURIComponent(link)}`),
   
-  // Brand approves content (releases escrow for paid collabs)
-  approveContent: (id) => api.post(`/campaigns/${id}/approve`),
+  // Brand verifies link (for barter: this unlocks identity)
+  verifyLink: (id) => api.post(`/campaigns/${id}/verify-link`),
+  
+  // Brand marks campaign as complete (releases escrow for paid collabs)
+  complete: (id) => api.post(`/campaigns/${id}/complete`),
+  
+  // Submit rating and feedback (after completion)
+  rate: (id, rating, feedback) => api.post(`/campaigns/${id}/rate?rating=${rating}&feedback=${encodeURIComponent(feedback)}`),
   
   // Report an issue with a campaign
   report: (id, reason) => api.post(`/campaigns/${id}/report?reason=${encodeURIComponent(reason)}`),
