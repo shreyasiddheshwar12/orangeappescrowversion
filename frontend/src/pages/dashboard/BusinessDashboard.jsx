@@ -495,24 +495,52 @@ const BusinessDashboard = () => {
             )}
           </TabsContent>
 
-          <TabsContent value="campaigns">
+          {/* Incoming Requests from Creators Tab */}
+          <TabsContent value="incoming">
             <div className="mb-6">
-              <h2 className="font-heading text-2xl font-bold">Your Campaigns</h2>
-              <p className="text-muted-foreground">Track your collaboration requests</p>
+              <h2 className="font-heading text-2xl font-bold">Incoming Requests</h2>
+              <p className="text-muted-foreground">Collaboration requests from creators</p>
             </div>
 
-            {campaigns.length === 0 ? (
+            {pendingIncoming.length === 0 ? (
               <div className="card-orange p-12 text-center">
-                <span className="text-5xl block mb-4">📤</span>
+                <span className="text-5xl block mb-4">📥</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No incoming requests</h3>
+                <p className="text-muted-foreground">When creators send you requests, they'll appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingIncoming.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    isIncoming={true}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="campaigns">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">All Campaigns</h2>
+              <p className="text-muted-foreground">Track all your collaboration requests</p>
+            </div>
+
+            {allCampaigns.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">📋</span>
                 <h3 className="font-heading text-xl font-bold mb-2">No campaigns yet</h3>
                 <p className="text-muted-foreground">Click on a creator to send a collaboration request!</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {campaigns.map(campaign => (
+                {allCampaigns.map(campaign => (
                   <CampaignCard 
                     key={campaign.id} 
                     campaign={campaign}
+                    isIncoming={isIncomingCampaign(campaign)}
                     onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
                   />
                 ))}
