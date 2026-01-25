@@ -33,9 +33,24 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Platform Configuration
 PLATFORM_COMMISSION_PERCENT = 10  # 10% commission on paid collabs
-BARTER_FACILITATION_FEE = 14900  # ₹149 in paise
+BARTER_FEE_PERCENT = 10  # 10% of declared product/service value for barter
+CREATOR_SUBSCRIPTION_FEE = 5000  # ₹50/month in paise (MOCKED for MVP)
 AUTO_APPROVE_DAYS = 7  # Auto-approve content after 7 days
 REQUEST_EXPIRY_HOURS = 72
+
+# Collaboration States
+COLLAB_STATES = [
+    "requested",      # Initial request sent
+    "accepted",       # Receiver accepted
+    "payment_pending", # Waiting for payment (escrow or barter fee)
+    "paid",           # Payment received, identities revealed
+    "in_progress",    # Work being done
+    "link_submitted", # Creator submitted reel/story link
+    "link_verified",  # Brand verified the link
+    "completed",      # Fully completed with ratings
+    "disputed",       # Issue reported
+    "cancelled"       # Cancelled by either party
+]
 
 # Create the main app
 app = FastAPI(title="Orange - Creator-Brand Collaboration Platform API")
