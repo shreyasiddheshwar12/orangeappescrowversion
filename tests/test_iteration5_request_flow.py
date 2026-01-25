@@ -15,7 +15,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://collab-hub-90.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://brand-connect-66.preview.emergentagent.com')
 
 # Test credentials
 BRAND_EMAIL = "brand1@orange.com"

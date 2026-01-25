@@ -6,7 +6,7 @@ import pytest
 import requests
 import os
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://collab-hub-90.preview.emergentagent.com')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://brand-connect-66.preview.emergentagent.com')
 
 # Test credentials from seed data
 BRAND_EMAIL = "brand1@orange.com"

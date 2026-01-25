@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 class OrangeMarketplaceAPITester:
-    def __init__(self, base_url="https://collab-hub-90.preview.emergentagent.com"):
+    def __init__(self, base_url="https://brand-connect-66.preview.emergentagent.com"):
         self.base_url = base_url
         self.creator_token = None
         self.business_token = None
