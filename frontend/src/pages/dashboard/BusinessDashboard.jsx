@@ -684,8 +684,15 @@ const BusinessDashboard = () => {
               <div className="bg-muted/50 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <p className="font-semibold">{selectedCampaign.receiverName}</p>
-                    <p className="text-sm text-muted-foreground capitalize">{selectedCampaign.campaignType.replace('_', ' ')}</p>
+                    <p className="font-semibold">
+                      {isIncomingCampaign(selectedCampaign) 
+                        ? selectedCampaign.senderName 
+                        : selectedCampaign.receiverName}
+                    </p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {selectedCampaign.campaignType.replace('_', ' ')}
+                      {isIncomingCampaign(selectedCampaign) && ' • From Creator'}
+                    </p>
                   </div>
                   <Badge className={STATUS_CONFIG[selectedCampaign.status]?.color}>
                     {STATUS_CONFIG[selectedCampaign.status]?.label}
@@ -707,7 +714,13 @@ const BusinessDashboard = () => {
               {selectedCampaign.identityUnlocked && (
                 <div className="bg-green-50 rounded-xl p-4">
                   <p className="font-semibold text-green-800 mb-2">🔓 Identity Unlocked</p>
-                  <p className="text-sm">Instagram: <strong>{selectedCampaign.receiverInstagram || 'N/A'}</strong></p>
+                  <p className="text-sm">
+                    Instagram: <strong>
+                      {isIncomingCampaign(selectedCampaign) 
+                        ? selectedCampaign.senderInstagram 
+                        : selectedCampaign.receiverInstagram || 'N/A'}
+                    </strong>
+                  </p>
                 </div>
               )}
 
