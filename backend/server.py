@@ -967,21 +967,6 @@ async def pay_for_campaign(campaign_id: str, current_user: dict = Depends(get_cu
         response["message"] = "Payment successful! Chat enabled. Identity will unlock after you verify the content link."
     
     return response
-    
-    sender_instagram = sender_profile.get("instagramUsername") if sender_profile else None
-    receiver_instagram = receiver_profile.get("instagramUsername") if receiver_profile else None
-    
-    return {
-        "success": True,
-        "message": f"Payment successful! Identity and chat unlocked.",
-        "status": "active",
-        "identityUnlocked": True,
-        "chatEnabled": True,
-        "senderInstagram": sender_instagram,
-        "receiverInstagram": receiver_instagram,
-        "amountPaid": amount,
-        "paymentType": payment_type
-    }
 
 @campaign_router.post("/{campaign_id}/shipping")
 async def add_shipping_details(
@@ -998,13 +983,14 @@ async def add_shipping_details(
     if campaign["senderUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the sender can add shipping details")
     
-    if campaign["campaignType"] != "barter":
+    if campaign["campaignType"] not in ["barter_product", "barter_service"]:
         raise HTTPException(status_code=400, detail="Shipping details only for barter collabs")
     
     await db.campaigns.update_one(
         {"id": campaign_id},
         {"$set": {
             "shippingDetails": shippingDetails,
+            "status": "in_progress",
             "updatedAt": datetime.now(timezone.utc).isoformat()
         }}
     )
@@ -1022,7 +1008,7 @@ async def confirm_product_received(campaign_id: str, current_user: dict = Depend
     if campaign["receiverUserId"] != current_user["id"]:
         raise HTTPException(status_code=403, detail="Only the receiver can confirm receipt")
     
-    if campaign["campaignType"] != "barter":
+    if campaign["campaignType"] not in ["barter_product", "barter_service"]:
         raise HTTPException(status_code=400, detail="Product receipt only for barter collabs")
     
     await db.campaigns.update_one(
