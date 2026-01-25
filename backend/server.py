@@ -805,10 +805,8 @@ async def create_campaign(
     
     await db.campaigns.insert_one(campaign_doc)
     
-    # Return response with identity hidden
-    response_doc = {**campaign_doc}
-    response_doc["senderInstagram"] = None  # Hidden until unlock
-    response_doc["receiverInstagram"] = None  # Hidden until unlock
+    # Return response with identity hidden for the other party
+    response_doc = mask_campaign_identity(campaign_doc, current_user["id"])
     
     return CampaignResponse(**{k: v for k, v in response_doc.items() if k != "_id"})
 
