@@ -2,35 +2,51 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Instagram, MapPin, Users, Edit, LogOut, MessageSquare, Check, X, 
-  ExternalLink, DollarSign, Image as ImageIcon, Loader2, Lock, Unlock,
-  Building2, Briefcase, Search, Filter
+  MapPin, Edit, LogOut, MessageSquare, Check, X, ExternalLink, 
+  Loader2, Clock, CheckCircle, AlertCircle, Link as LinkIcon, Star, Eye, EyeOff
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Input } from '../../components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { creatorAPI, campaignsAPI, marketplaceAPI, requestsAPI, getErrorMessage } from '../../lib/api';
+import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
+import { Switch } from '../../components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { creatorAPI, campaignAPI, marketplaceAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
 
+// Campaign status display config
+const STATUS_CONFIG = {
+  requested: { label: 'New Request', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+  accepted: { label: 'Accepted - Waiting Payment', color: 'bg-blue-100 text-blue-800', icon: Clock },
+  paid: { label: 'Paid - Submit Link', color: 'bg-purple-100 text-purple-800', icon: LinkIcon },
+  in_progress: { label: 'In Progress', color: 'bg-purple-100 text-purple-800', icon: Clock },
+  link_submitted: { label: 'Link Under Review', color: 'bg-orange-100 text-orange-800', icon: Clock },
+  link_verified: { label: 'Verified - Awaiting Completion', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+  completed: { label: 'Completed', color: 'bg-green-500 text-white', icon: CheckCircle },
+  disputed: { label: 'Disputed', color: 'bg-red-100 text-red-800', icon: AlertCircle },
+  cancelled: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800', icon: X },
+};
+
 const CreatorDashboard = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const [profile, setProfile] = useState(null);
-  const [campaigns, setCampaigns] = useState([]);
+  const [incomingCampaigns, setIncomingCampaigns] = useState([]);
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingBrands, setLoadingBrands] = useState(false);
-  const [actionLoading, setActionLoading] = useState(null);
-  const [activeTab, setActiveTab] = useState('campaigns');
-  const [brandFilters, setBrandFilters] = useState({
-    industry: '',
-    location: '',
-    openToBarter: false
-  });
+  const [actionLoading, setActionLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('requests');
+  
+  // Modals
+  const [showCampaignModal, setShowCampaignModal] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [contentLink, setContentLink] = useState('');
+  const [ratingForm, setRatingForm] = useState({ rating: 5, feedback: '' });
 
   useEffect(() => {
     loadData();
@@ -40,16 +56,16 @@ const CreatorDashboard = () => {
     if (activeTab === 'brands') {
       loadBrands();
     }
-  }, [activeTab, brandFilters]);
+  }, [activeTab]);
 
   const loadData = async () => {
     try {
       const [profileRes, campaignsRes] = await Promise.all([
         creatorAPI.getProfile(),
-        creatorAPI.getRequests()
+        campaignAPI.getIncoming()
       ]);
       setProfile(profileRes.data);
-      setCampaigns(campaignsRes.data);
+      setIncomingCampaigns(campaignsRes.data);
     } catch (error) {
       if (error.response?.status === 404) {
         navigate('/onboarding/creator');
@@ -64,7 +80,7 @@ const CreatorDashboard = () => {
   const loadBrands = async () => {
     setLoadingBrands(true);
     try {
-      const response = await marketplaceAPI.discoverBrands(brandFilters);
+      const response = await marketplaceAPI.discoverBrands();
       setBrands(response.data);
     } catch (error) {
       toast.error("Failed to load brands");
@@ -73,74 +89,114 @@ const CreatorDashboard = () => {
     }
   };
 
-  const handleCampaignAction = async (campaignId, newStatus, isRequest = false) => {
-    setActionLoading(campaignId);
+  const handleAcceptRequest = async (campaign) => {
+    setActionLoading(true);
     try {
-      if (isRequest) {
-        // Handle collab request response (accept/reject)
-        const action = newStatus === 'accepted' ? 'accept' : 'reject';
-        await requestsAPI.respond(campaignId, action);
-        
-        // Update local state
-        setCampaigns(prev => prev.map(c => 
-          c.id === campaignId ? { ...c, status: newStatus } : c
-        ));
-      } else {
-        // Handle campaign status update
-        await campaignsAPI.updateStatus(campaignId, newStatus);
-        setCampaigns(prev => prev.map(c => 
-          c.id === campaignId ? { ...c, campaignStatus: newStatus } : c
-        ));
-      }
+      await campaignAPI.respond(campaign.id, 'accept');
+      toast.success("Request accepted! 🎉 Waiting for brand to pay.");
       
-      if (newStatus === 'accepted') {
-        toast.success("Request accepted! 🎉 Brand has been notified.");
-      } else if (newStatus === 'declined') {
-        toast.success("Request declined. Brand's credit will be refunded.");
-      } else if (newStatus === 'delivered') {
-        toast.success("Marked as delivered! Waiting for brand approval 🎉");
-      }
-      
-      // Reload requests to get updated data
-      const requestsRes = await creatorAPI.getRequests();
-      setCampaigns(requestsRes.data);
+      const res = await campaignAPI.getIncoming();
+      setIncomingCampaigns(res.data);
+      setShowCampaignModal(false);
     } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to update"));
+      toast.error(getErrorMessage(error, "Failed to accept"));
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/');
+  const handleRejectRequest = async (campaign) => {
+    setActionLoading(true);
+    try {
+      await campaignAPI.respond(campaign.id, 'reject');
+      toast.success("Request declined.");
+      
+      const res = await campaignAPI.getIncoming();
+      setIncomingCampaigns(res.data);
+      setShowCampaignModal(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to reject"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSubmitLink = async (campaign) => {
+    if (!contentLink) {
+      toast.error("Please enter the reel/story link");
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await campaignAPI.submitLink(campaign.id, contentLink);
+      toast.success("Link submitted! Waiting for brand to verify.");
+      
+      const res = await campaignAPI.getIncoming();
+      setIncomingCampaigns(res.data);
+      setContentLink('');
+      setShowCampaignModal(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to submit link"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSubmitRating = async (campaign) => {
+    if (!ratingForm.feedback || ratingForm.feedback.length < 10) {
+      toast.error("Please provide feedback (min 10 characters)");
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await campaignAPI.rate(campaign.id, ratingForm.rating, ratingForm.feedback);
+      toast.success("Rating submitted!");
+      
+      const res = await campaignAPI.getIncoming();
+      setIncomingCampaigns(res.data);
+      setShowCampaignModal(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to submit rating"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleVisibility = async () => {
+    setActionLoading(true);
+    try {
+      const newVisibility = !profile.isVisible;
+      await creatorAPI.toggleVisibility(newVisibility);
+      setProfile(prev => ({ ...prev, isVisible: newVisibility }));
+      toast.success(newVisibility ? "Profile is now visible to brands!" : "Profile hidden from marketplace.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to update visibility"));
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
-  const formatFollowers = (count) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-  };
+  // Separate campaigns by status
+  const pendingRequests = incomingCampaigns.filter(c => c.status === 'requested');
+  const activeCampaigns = incomingCampaigns.filter(c => ['accepted', 'paid', 'in_progress', 'link_submitted', 'link_verified'].includes(c.status));
+  const completedCampaigns = incomingCampaigns.filter(c => c.status === 'completed');
 
   if (loading) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-10 h-10 mx-auto text-primary animate-spin mb-4" />
-          <p className="text-muted-foreground">Juicing the data... 🧃</p>
+          <p className="text-muted-foreground">Loading... 🍊</p>
         </div>
       </div>
     );
   }
-
-  const proposedCampaigns = campaigns.filter(c => c.status === 'pending' || c.campaignStatus === 'proposed');
-  const acceptedCampaigns = campaigns.filter(c => c.status === 'accepted' || ['accepted', 'in_progress'].includes(c.campaignStatus));
-  const completedCampaigns = campaigns.filter(c => c.status === 'completed' || ['delivered', 'completed'].includes(c.campaignStatus));
-  const declinedCampaigns = campaigns.filter(c => c.status === 'declined' || c.status === 'expired' || ['declined', 'cancelled'].includes(c.campaignStatus));
 
   return (
     <div className="min-h-screen bg-background">
@@ -153,7 +209,25 @@ const CreatorDashboard = () => {
             </div>
             <span className="font-heading font-bold text-xl">Orange</span>
           </div>
-          <div className="flex items-center gap-3">
+          
+          <div className="flex items-center gap-4">
+            {/* Visibility Toggle */}
+            <div className="flex items-center gap-2 bg-accent/20 px-4 py-2 rounded-full">
+              {profile?.isVisible ? (
+                <Eye className="w-4 h-4 text-green-600" />
+              ) : (
+                <EyeOff className="w-4 h-4 text-red-600" />
+              )}
+              <span className="font-semibold text-sm">
+                {profile?.isVisible ? 'Visible' : 'Hidden'}
+              </span>
+              <Switch
+                checked={profile?.isVisible}
+                onCheckedChange={handleToggleVisibility}
+                disabled={actionLoading}
+              />
+            </div>
+            
             <Button
               variant="outline"
               className="rounded-full"
@@ -161,12 +235,12 @@ const CreatorDashboard = () => {
               data-testid="view-public-profile-btn"
             >
               <ExternalLink className="w-4 h-4 mr-2" />
-              View Public Profile
+              View Profile
             </Button>
             <Button
               variant="ghost"
               className="rounded-full text-muted-foreground"
-              onClick={handleLogout}
+              onClick={() => { logout(); navigate('/'); }}
               data-testid="logout-btn"
             >
               <LogOut className="w-4 h-4 mr-2" />
@@ -177,529 +251,406 @@ const CreatorDashboard = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Profile Card */}
-          <div className="lg:col-span-1">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="card-orange p-6 sticky top-24"
-            >
-              <div className="text-center mb-6">
-                <Avatar className="w-24 h-24 mx-auto mb-4 border-4 border-primary">
-                  <AvatarImage src={profile?.profilePhotoUrl} />
-                  <AvatarFallback className="bg-primary text-white text-2xl">
-                    {profile?.name?.[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <h2 className="font-heading text-2xl font-bold mb-1">{profile?.name}</h2>
-                <p className="text-muted-foreground text-sm mb-3">{profile?.bio}</p>
-                
-                <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground mb-4">
-                  {profile?.location && (
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      {profile.location}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    {formatFollowers(profile?.followersCount || 0)} followers
-                  </div>
-                </div>
-
-                {/* Niches */}
-                <div className="flex flex-wrap justify-center gap-2 mb-4">
-                  {profile?.niches?.map(niche => (
-                    <Badge key={niche} variant="secondary" className="bg-primary/10 text-primary">
-                      {niche}
-                    </Badge>
-                  ))}
-                </div>
-
-                {profile?.isOpenToBarter && (
-                  <Badge className="bg-accent text-accent-foreground">
-                    🤝 Open to Barter
+        {/* Profile Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card-orange p-6 mb-8"
+        >
+          <div className="flex items-center gap-6">
+            <Avatar className="w-20 h-20 border-4 border-primary">
+              <AvatarImage src={profile?.profilePhotoUrl} />
+              <AvatarFallback className="bg-primary text-white text-2xl">
+                {profile?.name?.[0]}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <h2 className="font-heading text-2xl font-bold">{profile?.name}</h2>
+                {profile?.instagramVerified && (
+                  <Badge className="bg-green-100 text-green-800">✓ Verified</Badge>
+                )}
+                {profile?.rating && (
+                  <Badge variant="secondary">⭐ {profile.rating.toFixed(1)}</Badge>
+                )}
+              </div>
+              <p className="text-muted-foreground mb-3">{profile?.bio}</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge>{profile?.niche}</Badge>
+                {profile?.location && (
+                  <Badge variant="outline">
+                    <MapPin className="w-3 h-3 mr-1" />
+                    {profile.location}
                   </Badge>
                 )}
+                <Badge variant="outline">{profile?.totalCollabs || 0} Collabs</Badge>
               </div>
-
-              {/* Rates */}
-              <div className="border-t border-orange-100 pt-4 mb-4">
-                <h3 className="font-semibold text-sm text-muted-foreground mb-3">YOUR RATES</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Reel</p>
-                    <p className="font-bold text-primary">{formatPrice(profile?.rates?.reelPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Story</p>
-                    <p className="font-bold text-primary">{formatPrice(profile?.rates?.storyPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Carousel</p>
-                    <p className="font-bold text-primary">{formatPrice(profile?.rates?.carouselPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Post</p>
-                    <p className="font-bold text-primary">{formatPrice(profile?.rates?.postPrice || 0)}</p>
-                  </div>
-                </div>
+            </div>
+            <div className="text-right">
+              <div className="mb-2">
+                <p className="text-sm text-muted-foreground">Your Rates</p>
+                <p className="font-bold">Reel: {formatPrice(profile?.reelPrice || 0)}</p>
+                <p className="font-bold">Story: {formatPrice(profile?.storyPrice || 0)}</p>
               </div>
-
-              {/* Actions */}
-              <div className="space-y-2">
-                {profile?.instagramUrl && (
-                  <Button
-                    variant="outline"
-                    className="w-full rounded-full"
-                    onClick={() => window.open(profile.instagramUrl, '_blank')}
-                    data-testid="instagram-btn"
-                  >
-                    <Instagram className="w-4 h-4 mr-2" />
-                    Go to Instagram
-                  </Button>
-                )}
-                <Button
-                  className="w-full btn-primary"
-                  onClick={() => navigate('/onboarding/creator')}
-                  data-testid="edit-profile-btn"
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Profile
-                </Button>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Main Content Section */}
-          <div className="lg:col-span-2">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              {/* Main Tabs - Campaigns vs Brands */}
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="mb-6 bg-muted/50 p-1 rounded-full w-full">
-                  <TabsTrigger value="campaigns" className="rounded-full data-[state=active]:bg-white flex-1">
-                    <MessageSquare className="w-4 h-4 mr-2" />
-                    Campaigns ({campaigns.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="brands" className="rounded-full data-[state=active]:bg-white flex-1">
-                    <Building2 className="w-4 h-4 mr-2" />
-                    Find Brands
-                  </TabsTrigger>
-                </TabsList>
-
-                {/* Campaigns Tab */}
-                <TabsContent value="campaigns">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="font-heading text-2xl font-bold">Your Campaigns 🍊</h2>
-                    <Badge variant="secondary" className="text-lg px-4 py-1">
-                      {proposedCampaigns.length} new
-                    </Badge>
-              </div>
-
-              {campaigns.length === 0 ? (
-                <div className="card-orange p-12 text-center">
-                  <span className="text-5xl block mb-4">🍊</span>
-                  <h3 className="font-heading text-xl font-bold mb-2">No collabs yet…</h3>
-                  <p className="text-muted-foreground">
-                    But your Orange is fresh. The right brand is on its way 🍊✨
-                  </p>
-                </div>
-              ) : (
-                <Tabs defaultValue="proposed" className="w-full">
-                  <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
-                    <TabsTrigger value="proposed" className="rounded-full data-[state=active]:bg-white">
-                      New ({proposedCampaigns.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="active" className="rounded-full data-[state=active]:bg-white">
-                      Active ({acceptedCampaigns.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="completed" className="rounded-full data-[state=active]:bg-white">
-                      Done ({completedCampaigns.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="declined" className="rounded-full data-[state=active]:bg-white">
-                      Declined ({declinedCampaigns.length})
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="proposed" className="space-y-4">
-                    {proposedCampaigns.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No new proposals</p>
-                    ) : (
-                      proposedCampaigns.map(campaign => (
-                        <CampaignCard 
-                          key={campaign.id}
-                          campaign={campaign}
-                          onAccept={() => handleCampaignAction(campaign.id, 'accepted', !!campaign.senderName)}
-                          onDecline={() => handleCampaignAction(campaign.id, 'declined', !!campaign.senderName)}
-                          onChat={() => navigate(`/chat/${campaign.id}`)}
-                          loading={actionLoading === campaign.id}
-                          showActions
-                        />
-                      ))
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="active" className="space-y-4">
-                    {acceptedCampaigns.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No active campaigns</p>
-                    ) : (
-                      acceptedCampaigns.map(campaign => (
-                        <CampaignCard 
-                          key={campaign.id}
-                          campaign={campaign}
-                          onChat={() => navigate(`/chat/${campaign.id}`)}
-                          onDeliver={() => handleCampaignAction(campaign.id, 'delivered')}
-                          loading={actionLoading === campaign.id}
-                          showDeliverButton={campaign.escrowStatus === 'paid'}
-                        />
-                      ))
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="completed" className="space-y-4">
-                    {completedCampaigns.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No completed campaigns</p>
-                    ) : (
-                      completedCampaigns.map(campaign => (
-                        <CampaignCard 
-                          key={campaign.id}
-                          campaign={campaign}
-                          onChat={() => navigate(`/chat/${campaign.id}`)}
-                        />
-                      ))
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="declined" className="space-y-4">
-                    {declinedCampaigns.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">No declined campaigns</p>
-                    ) : (
-                      declinedCampaigns.map(campaign => (
-                        <CampaignCard 
-                          key={campaign.id}
-                          campaign={campaign}
-                        />
-                      ))
-                    )}
-                  </TabsContent>
-                </Tabs>
-              )}
-                </TabsContent>
-
-                {/* Brands Tab */}
-                <TabsContent value="brands">
-                  <div className="mb-6">
-                    <h2 className="font-heading text-2xl font-bold mb-4">Discover Brands 🏢</h2>
-                    
-                    {/* Filters */}
-                    <div className="flex flex-wrap gap-3 mb-6">
-                      <Select 
-                        value={brandFilters.industry || "all"} 
-                        onValueChange={(v) => setBrandFilters(f => ({...f, industry: v === "all" ? "" : v}))}
-                      >
-                        <SelectTrigger className="w-[150px] rounded-full">
-                          <SelectValue placeholder="Industry" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Industries</SelectItem>
-                          <SelectItem value="Beauty">Beauty</SelectItem>
-                          <SelectItem value="Fashion">Fashion</SelectItem>
-                          <SelectItem value="Fitness">Fitness</SelectItem>
-                          <SelectItem value="Food">Food</SelectItem>
-                          <SelectItem value="Tech">Tech</SelectItem>
-                          <SelectItem value="Travel">Travel</SelectItem>
-                          <SelectItem value="Lifestyle">Lifestyle</SelectItem>
-                          <SelectItem value="Health">Health</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      
-                      <Button
-                        variant={brandFilters.openToBarter ? "default" : "outline"}
-                        className="rounded-full"
-                        onClick={() => setBrandFilters(f => ({...f, openToBarter: !f.openToBarter}))}
-                      >
-                        🤝 Barter Only
-                      </Button>
-                    </div>
-                  </div>
-
-                  {loadingBrands ? (
-                    <div className="text-center py-12">
-                      <Loader2 className="w-8 h-8 mx-auto text-primary animate-spin mb-2" />
-                      <p className="text-muted-foreground">Finding brands...</p>
-                    </div>
-                  ) : brands.length === 0 ? (
-                    <div className="card-orange p-12 text-center">
-                      <span className="text-5xl block mb-4">🏢</span>
-                      <h3 className="font-heading text-xl font-bold mb-2">No brands found</h3>
-                      <p className="text-muted-foreground">
-                        Try adjusting your filters or check back later for new brands!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {brands.map((brand, index) => (
-                        <BrandDiscoveryCard 
-                          key={brand.id} 
-                          brand={brand} 
-                          index={index}
-                          onClick={() => navigate(`/profile/brand/${brand.id}`)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </motion.div>
-
-            {/* Media Gallery Preview */}
-            {profile?.mediaGallery?.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="mt-8"
+              <Button
+                onClick={() => navigate('/onboarding/creator')}
+                variant="outline"
+                className="rounded-full"
+                data-testid="edit-profile-btn"
               >
-                <h3 className="font-heading text-xl font-bold mb-4 flex items-center gap-2">
-                  <ImageIcon className="w-5 h-5" />
-                  Your Gallery
-                </h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                  {profile.mediaGallery.slice(0, 10).map((media, idx) => (
-                    <div key={idx} className="aspect-square rounded-2xl overflow-hidden bg-muted">
-                      {media.type === 'video' ? (
-                        <video src={media.url} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={media.thumbnailUrl || media.url} alt="" className="w-full h-full object-cover" />
+                <Edit className="w-4 h-4 mr-2" />
+                Edit Profile
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
+            <TabsTrigger value="requests" className="rounded-full data-[state=active]:bg-white px-6">
+              📥 New Requests ({pendingRequests.length})
+            </TabsTrigger>
+            <TabsTrigger value="active" className="rounded-full data-[state=active]:bg-white px-6">
+              🔄 Active ({activeCampaigns.length})
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="rounded-full data-[state=active]:bg-white px-6">
+              ✅ Completed ({completedCampaigns.length})
+            </TabsTrigger>
+            <TabsTrigger value="brands" className="rounded-full data-[state=active]:bg-white px-6">
+              🏢 Browse Brands
+            </TabsTrigger>
+          </TabsList>
+
+          {/* New Requests Tab */}
+          <TabsContent value="requests">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">Collaboration Requests</h2>
+              <p className="text-muted-foreground">New requests from brands</p>
+            </div>
+
+            {pendingRequests.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">📥</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No new requests</h3>
+                <p className="text-muted-foreground">New collaboration requests will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingRequests.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Active Campaigns Tab */}
+          <TabsContent value="active">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">Active Campaigns</h2>
+              <p className="text-muted-foreground">Ongoing collaborations</p>
+            </div>
+
+            {activeCampaigns.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">🔄</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No active campaigns</h3>
+                <p className="text-muted-foreground">Accept requests to start collaborating!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activeCampaigns.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Completed Campaigns Tab */}
+          <TabsContent value="completed">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">Completed</h2>
+              <p className="text-muted-foreground">Past collaborations</p>
+            </div>
+
+            {completedCampaigns.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">✅</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No completed campaigns yet</h3>
+                <p className="text-muted-foreground">Completed collaborations will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {completedCampaigns.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Browse Brands Tab */}
+          <TabsContent value="brands">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">Browse Brands</h2>
+              <p className="text-muted-foreground">Discover brands looking for creators</p>
+            </div>
+
+            {loadingBrands ? (
+              <div className="text-center py-12">
+                <Loader2 className="w-10 h-10 mx-auto text-primary animate-spin mb-4" />
+                <p className="text-muted-foreground">Loading brands...</p>
+              </div>
+            ) : brands.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">🏢</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No brands found</h3>
+                <p className="text-muted-foreground">Check back later for new brands</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {brands.map((brand, idx) => (
+                  <BrandCard key={brand.id} brand={brand} index={idx} />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </main>
+
+      {/* Campaign Details Modal */}
+      <Dialog open={showCampaignModal} onOpenChange={setShowCampaignModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl">Campaign Details</DialogTitle>
+          </DialogHeader>
+          
+          {selectedCampaign && (
+            <div className="space-y-4 pt-4">
+              <div className="bg-muted/50 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-semibold">{selectedCampaign.senderName}</p>
+                    <p className="text-sm text-muted-foreground capitalize">{selectedCampaign.campaignType.replace('_', ' ')}</p>
+                  </div>
+                  <Badge className={STATUS_CONFIG[selectedCampaign.status]?.color}>
+                    {STATUS_CONFIG[selectedCampaign.status]?.label}
+                  </Badge>
+                </div>
+                <p className="text-sm"><strong>Deliverables:</strong> {selectedCampaign.deliverables}</p>
+                {selectedCampaign.campaignType === 'paid' && (
+                  <>
+                    <p className="text-sm"><strong>Budget:</strong> {formatPrice(selectedCampaign.budget)}</p>
+                    <p className="text-sm text-green-600"><strong>Your Payout:</strong> {formatPrice(selectedCampaign.creatorPayout)}</p>
+                  </>
+                )}
+                {selectedCampaign.campaignType !== 'paid' && (
+                  <>
+                    <p className="text-sm"><strong>Product Value:</strong> {formatPrice(selectedCampaign.productValue)}</p>
+                    {selectedCampaign.barterDetails && (
+                      <p className="text-sm"><strong>Product/Service:</strong> {selectedCampaign.barterDetails}</p>
+                    )}
+                  </>
+                )}
+                {selectedCampaign.timeline && (
+                  <p className="text-sm"><strong>Timeline:</strong> {selectedCampaign.timeline}</p>
+                )}
+                {selectedCampaign.brief && (
+                  <p className="text-sm"><strong>Brief:</strong> {selectedCampaign.brief}</p>
+                )}
+              </div>
+
+              {/* Identity Info */}
+              {selectedCampaign.identityUnlocked && (
+                <div className="bg-green-50 rounded-xl p-4">
+                  <p className="font-semibold text-green-800 mb-2">🔓 Identity Unlocked</p>
+                  <p className="text-sm">Brand Instagram: <strong>{selectedCampaign.senderInstagram || 'N/A'}</strong></p>
+                </div>
+              )}
+
+              {/* Action Buttons based on status */}
+              <div className="space-y-3">
+                {selectedCampaign.status === 'requested' && (
+                  <div className="flex gap-3">
+                    <Button onClick={() => handleAcceptRequest(selectedCampaign)} className="flex-1 btn-primary" disabled={actionLoading}>
+                      {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                      Accept
+                    </Button>
+                    <Button onClick={() => handleRejectRequest(selectedCampaign)} variant="outline" className="flex-1 rounded-full" disabled={actionLoading}>
+                      <X className="w-4 h-4 mr-2" />
+                      Decline
+                    </Button>
+                  </div>
+                )}
+
+                {selectedCampaign.status === 'accepted' && (
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-blue-500 mb-2" />
+                    <p className="text-blue-800">Waiting for brand to complete payment...</p>
+                  </div>
+                )}
+
+                {(selectedCampaign.status === 'paid' || selectedCampaign.status === 'in_progress') && (
+                  <div className="space-y-3">
+                    <Label>Submit Reel/Story Link</Label>
+                    <Input
+                      placeholder="https://instagram.com/reel/..."
+                      value={contentLink}
+                      onChange={(e) => setContentLink(e.target.value)}
+                      className="input-orange"
+                    />
+                    <Button onClick={() => handleSubmitLink(selectedCampaign)} className="w-full btn-primary" disabled={actionLoading}>
+                      {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <LinkIcon className="w-4 h-4 mr-2" />}
+                      Submit Link
+                    </Button>
+                  </div>
+                )}
+
+                {selectedCampaign.status === 'link_submitted' && (
+                  <div className="bg-orange-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-orange-500 mb-2" />
+                    <p className="text-orange-800">Waiting for brand to verify your link...</p>
+                    <p className="text-sm text-muted-foreground mt-1">{selectedCampaign.contentLink}</p>
+                  </div>
+                )}
+
+                {selectedCampaign.status === 'link_verified' && (
+                  <div className="bg-green-50 rounded-xl p-4 text-center">
+                    <CheckCircle className="w-8 h-8 mx-auto text-green-500 mb-2" />
+                    <p className="text-green-800">Link verified! Waiting for brand to mark complete...</p>
+                  </div>
+                )}
+
+                {selectedCampaign.status === 'completed' && (
+                  <div className="space-y-3">
+                    <div className="bg-green-50 rounded-xl p-4 text-center">
+                      <CheckCircle className="w-8 h-8 mx-auto text-green-500 mb-2" />
+                      <p className="text-green-800 font-semibold">Campaign Completed! 🎉</p>
+                      {selectedCampaign.campaignType === 'paid' && (
+                        <p className="text-sm">Payout: {formatPrice(selectedCampaign.creatorPayout)}</p>
                       )}
                     </div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </div>
-        </div>
-      </main>
+                    
+                    <Label>Rate this brand</Label>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button
+                          key={star}
+                          onClick={() => setRatingForm(prev => ({ ...prev, rating: star }))}
+                          className={`p-1 ${ratingForm.rating >= star ? 'text-yellow-500' : 'text-gray-300'}`}
+                        >
+                          <Star className="w-6 h-6 fill-current" />
+                        </button>
+                      ))}
+                    </div>
+                    <Textarea
+                      placeholder="Share your feedback (min 10 characters)"
+                      value={ratingForm.feedback}
+                      onChange={(e) => setRatingForm(prev => ({ ...prev, feedback: e.target.value }))}
+                      className="input-orange"
+                    />
+                    <Button onClick={() => handleSubmitRating(selectedCampaign)} className="w-full btn-primary" disabled={actionLoading}>
+                      {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Star className="w-4 h-4 mr-2" />}
+                      Submit Rating
+                    </Button>
+                  </div>
+                )}
+
+                {selectedCampaign.chatEnabled && (
+                  <Button variant="outline" onClick={() => navigate(`/chat/${selectedCampaign.id}`)} className="w-full rounded-full">
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Open Chat
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-const CampaignCard = ({ campaign, onAccept, onDecline, onChat, onDeliver, loading, showActions, showDeliverButton }) => {
+// Campaign Card Component
+const CampaignCard = ({ campaign, onClick }) => {
+  const StatusIcon = STATUS_CONFIG[campaign.status]?.icon || Clock;
+  
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
-  // Normalize data - handle both request and campaign objects
-  const displayName = campaign.senderName || campaign.brandName || 'Brand';
-  const displayStatus = campaign.status || campaign.campaignStatus || 'pending';
-  const displayBudget = campaign.proposedBudget || campaign.price || 0;
-  const displayMessage = campaign.message || campaign.brief || '';
-  const displayDeliverables = campaign.deliverables || '';
-  const isRequest = !!campaign.senderName; // It's a request if it has senderName
-
-  const statusColors = {
-    pending: 'bg-blue-100 text-blue-800',
-    proposed: 'bg-blue-100 text-blue-800',
-    accepted: 'bg-green-100 text-green-800',
-    declined: 'bg-red-100 text-red-800',
-    expired: 'bg-gray-100 text-gray-800',
-    in_progress: 'bg-yellow-100 text-yellow-800',
-    delivered: 'bg-purple-100 text-purple-800',
-    completed: 'bg-green-100 text-green-800',
-    cancelled: 'bg-gray-100 text-gray-800'
-  };
-
-  const escrowColors = {
-    pending: 'bg-orange-100 text-orange-800',
-    paid: 'bg-green-100 text-green-800',
-    released: 'bg-blue-100 text-blue-800'
-  };
-
   return (
-    <div className="card-orange p-6" data-testid={`campaign-card-${campaign.id}`}>
-      <div className="flex items-start gap-4">
-        <Avatar className="w-12 h-12 border-2 border-orange-100">
-          <AvatarFallback className="bg-primary/10 text-primary">
-            {displayName?.[0] || 'B'}
-          </AvatarFallback>
-        </Avatar>
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <h4 className="font-semibold">{displayName}</h4>
-            <Badge className={statusColors[displayStatus] || 'bg-gray-100 text-gray-800'}>
-              {displayStatus?.replace('_', ' ')}
-            </Badge>
-            {!isRequest && campaign.escrowStatus && (
-              <Badge className={escrowColors[campaign.escrowStatus]}>
-                {campaign.escrowStatus === 'paid' ? '💰 Paid' : 
-                 campaign.escrowStatus === 'released' ? '✅ Released' : '⏳ Pending Payment'}
-              </Badge>
-            )}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="card-orange p-4 cursor-pointer hover:shadow-lg transition-shadow"
+      onClick={onClick}
+      data-testid={`campaign-card-${campaign.id}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+            <StatusIcon className="w-6 h-6 text-primary" />
           </div>
-          {campaign.title && <h3 className="font-heading text-lg font-bold mb-2">{campaign.title}</h3>}
-          <p className="text-muted-foreground text-sm mb-3">{displayMessage}</p>
-          
-          <div className="flex flex-wrap gap-4 text-sm">
-            {displayBudget > 0 && (
-              <div className="flex items-center gap-1 text-primary font-semibold">
-                <DollarSign className="w-4 h-4" />
-                {formatPrice(displayBudget)}
-              </div>
-            )}
-            {displayDeliverables && (
-              <div className="text-muted-foreground">
-                📦 {displayDeliverables}
-              </div>
-            )}
-            {campaign.timeline && (
-              <div className="text-muted-foreground">
-                ⏰ {campaign.timeline}
-              </div>
-            )}
-            {campaign.isBarter && (
-              <Badge className="bg-accent/50 text-accent-foreground">🤝 Barter Deal</Badge>
-            )}
-            {campaign.expiresAt && (
-              <div className="text-muted-foreground text-xs">
-                Expires: {new Date(campaign.expiresAt).toLocaleDateString()}
-              </div>
-            )}
+          <div>
+            <h3 className="font-semibold">{campaign.senderName}</h3>
+            <p className="text-sm text-muted-foreground capitalize">
+              {campaign.campaignType.replace('_', ' ')} • {campaign.deliverables}
+            </p>
           </div>
         </div>
-      </div>
-
-      <div className="flex items-center gap-3 mt-4 pt-4 border-t border-orange-100">
-        {showActions && (displayStatus === 'pending' || displayStatus === 'proposed') && (
-          <>
-            <Button
-              onClick={onAccept}
-              disabled={loading}
-              className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground rounded-full"
-              data-testid={`accept-campaign-${campaign.id}`}
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-              Accept
-            </Button>
-            <Button
-              onClick={onDecline}
-              disabled={loading}
-              variant="outline"
-              className="flex-1 rounded-full"
-              data-testid={`decline-campaign-${campaign.id}`}
-            >
-              <X className="w-4 h-4 mr-2" />
-              Decline
-            </Button>
-          </>
-        )}
-        
-        {showDeliverButton && displayStatus !== 'delivered' && !isRequest && (
-          <Button
-            onClick={onDeliver}
-            disabled={loading}
-            className="bg-purple-500 hover:bg-purple-600 text-white rounded-full"
-            data-testid={`deliver-campaign-${campaign.id}`}
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : '📦 Mark Delivered'}
-          </Button>
-        )}
-        
-        {/* Chat available for accepted campaigns */}
-        {!isRequest && displayStatus === 'accepted' && onChat && (
-          <Button
-            onClick={onChat}
-            className={campaign.escrowStatus === 'paid' ? "btn-primary flex-1" : "btn-secondary flex-1"}
-            data-testid={`chat-campaign-${campaign.id}`}
-          >
-            <MessageSquare className="w-4 h-4 mr-2" />
-            {campaign.escrowStatus === 'paid' ? 'Chat (Full Access)' : 'Chat'}
-          </Button>
-        )}
-      </div>
-      
-      {/* Warning for unpaid escrow */}
-      {displayStatus === 'accepted' && campaign.escrowStatus === 'pending' && (
-        <div className="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-200">
-          <p className="text-sm text-orange-800 flex items-center gap-2">
-            <Lock className="w-4 h-4" />
-            Waiting for brand to pay escrow. Instagram access will unlock after payment.
+        <div className="text-right">
+          <Badge className={STATUS_CONFIG[campaign.status]?.color}>
+            {STATUS_CONFIG[campaign.status]?.label}
+          </Badge>
+          <p className="text-sm text-muted-foreground mt-1">
+            {campaign.campaignType === 'paid' ? formatPrice(campaign.creatorPayout) : formatPrice(campaign.productValue)}
           </p>
         </div>
+      </div>
+      
+      {campaign.identityUnlocked && (
+        <div className="mt-3 pt-3 border-t border-orange-100 text-sm text-green-600">
+          🔓 Instagram: {campaign.senderInstagram || 'Available'}
+        </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 
-// Brand Discovery Card Component
-const BrandDiscoveryCard = ({ brand, index, onClick }) => {
+// Brand Card Component (Anonymous - No Name/Instagram shown)
+const BrandCard = ({ brand, index }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="card-orange p-5 cursor-pointer group hover:shadow-lg transition-shadow"
-      onClick={onClick}
+      className="card-orange p-6"
       data-testid={`brand-card-${brand.id}`}
     >
-      <div className="flex items-start gap-4">
-        <div className="w-14 h-14 bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center shrink-0">
-          <Building2 className="w-7 h-7 text-primary" />
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h3 className="font-heading font-bold text-lg truncate">
-                {brand.isUnlocked ? brand.brandName : 'Brand Profile'}
-              </h3>
-              <p className="text-sm text-muted-foreground">{brand.industry}</p>
-            </div>
-            {!brand.isUnlocked && (
-              <Lock className="w-5 h-5 text-muted-foreground shrink-0" />
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            {brand.location && (
-              <Badge variant="secondary" className="text-xs">
-                <MapPin className="w-3 h-3 mr-1" />
-                {brand.location}
-              </Badge>
-            )}
-            {brand.isOpenToBarter && (
-              <Badge className="bg-accent text-accent-foreground text-xs">
-                🤝 Barter OK
-              </Badge>
-            )}
-          </div>
-          
-          <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <DollarSign className="w-4 h-4" />
-              {brand.budgetRange || 'Budget varies'}
-            </span>
-            <span className="flex items-center gap-1">
-              <Briefcase className="w-4 h-4" />
-              {brand.pastCollabsDisplay || '0 collabs'}
-            </span>
-          </div>
-          
-          {brand.preferredNiches?.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1">
-              {brand.preferredNiches.slice(0, 3).map(niche => (
-                <Badge key={niche} variant="outline" className="text-xs">
-                  {niche}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-3xl mb-4">
+        🏢
       </div>
+      <h3 className="font-heading font-bold text-lg mb-1">{brand.industry} Brand</h3>
+      <p className="text-sm text-muted-foreground mb-3">{brand.location}</p>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">{brand.budgetRange}</Badge>
+        {brand.barterEnabled && <Badge>🤝 Barter</Badge>}
+      </div>
+      <p className="text-xs text-muted-foreground mt-3">
+        Send request from their profile
+      </p>
     </motion.div>
   );
 };
