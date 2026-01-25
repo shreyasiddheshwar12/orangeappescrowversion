@@ -41,7 +41,8 @@ const BusinessDashboard = () => {
   const { logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [creators, setCreators] = useState([]);
-  const [campaigns, setCampaigns] = useState([]);
+  const [outgoingCampaigns, setOutgoingCampaigns] = useState([]);
+  const [incomingCampaigns, setIncomingCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [creatorsLoading, setCreatorsLoading] = useState(false);
   
@@ -73,12 +74,14 @@ const BusinessDashboard = () => {
 
   const loadData = async () => {
     try {
-      const [profileRes, campaignsRes] = await Promise.all([
+      const [profileRes, outgoingRes, incomingRes] = await Promise.all([
         businessAPI.getProfile(),
-        campaignAPI.getOutgoing()
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
       ]);
       setProfile(profileRes.data);
-      setCampaigns(campaignsRes.data);
+      setOutgoingCampaigns(outgoingRes.data);
+      setIncomingCampaigns(incomingRes.data);
       await loadCreators();
     } catch (error) {
       if (error.response?.status === 404) {
