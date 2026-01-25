@@ -897,12 +897,15 @@ const CreatorCard = ({ creator, index, onClick }) => {
 };
 
 // Campaign Card Component
-const CampaignCard = ({ campaign, onClick }) => {
+const CampaignCard = ({ campaign, isIncoming = false, onClick }) => {
   const StatusIcon = STATUS_CONFIG[campaign.status]?.icon || Clock;
   
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
+
+  const otherParty = isIncoming ? campaign.senderName : campaign.receiverName;
+  const otherPartyInstagram = isIncoming ? campaign.senderInstagram : campaign.receiverInstagram;
 
   return (
     <motion.div
@@ -918,7 +921,12 @@ const CampaignCard = ({ campaign, onClick }) => {
             <StatusIcon className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h3 className="font-semibold">{campaign.receiverName}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">{otherParty}</h3>
+              <Badge variant="outline" className="text-xs">
+                {isIncoming ? '📥 From Creator' : '📤 Sent'}
+              </Badge>
+            </div>
             <p className="text-sm text-muted-foreground capitalize">
               {campaign.campaignType.replace('_', ' ')} • {campaign.deliverables}
             </p>
@@ -936,7 +944,7 @@ const CampaignCard = ({ campaign, onClick }) => {
       
       {campaign.identityUnlocked && (
         <div className="mt-3 pt-3 border-t border-orange-100 text-sm text-green-600">
-          🔓 Instagram: {campaign.receiverInstagram || 'Available'}
+          🔓 Instagram: {otherPartyInstagram || 'Available'}
         </div>
       )}
     </motion.div>
