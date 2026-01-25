@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   MapPin, Edit, LogOut, MessageSquare, Check, X, ExternalLink, 
-  Loader2, Clock, CheckCircle, AlertCircle, Link as LinkIcon, Star, Eye, EyeOff
+  Loader2, Clock, CheckCircle, AlertCircle, Link as LinkIcon, Star, Eye, EyeOff, Send
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -13,6 +13,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Switch } from '../../components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { creatorAPI, campaignAPI, marketplaceAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -36,6 +37,7 @@ const CreatorDashboard = () => {
   const { logout } = useAuth();
   const [profile, setProfile] = useState(null);
   const [incomingCampaigns, setIncomingCampaigns] = useState([]);
+  const [outgoingCampaigns, setOutgoingCampaigns] = useState([]);
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingBrands, setLoadingBrands] = useState(false);
@@ -45,8 +47,21 @@ const CreatorDashboard = () => {
   // Modals
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [selectedBrand, setSelectedBrand] = useState(null);
   const [contentLink, setContentLink] = useState('');
   const [ratingForm, setRatingForm] = useState({ rating: 5, feedback: '' });
+  
+  // Request form for sending to brands
+  const [requestForm, setRequestForm] = useState({
+    campaignType: 'paid',
+    deliverables: '',
+    budget: 0,
+    productValue: 0,
+    timeline: '',
+    brief: '',
+    barterDetails: ''
+  });
 
   useEffect(() => {
     loadData();
@@ -60,12 +75,14 @@ const CreatorDashboard = () => {
 
   const loadData = async () => {
     try {
-      const [profileRes, campaignsRes] = await Promise.all([
+      const [profileRes, incomingRes, outgoingRes] = await Promise.all([
         creatorAPI.getProfile(),
-        campaignAPI.getIncoming()
+        campaignAPI.getIncoming(),
+        campaignAPI.getOutgoing()
       ]);
       setProfile(profileRes.data);
-      setIncomingCampaigns(campaignsRes.data);
+      setIncomingCampaigns(incomingRes.data);
+      setOutgoingCampaigns(outgoingRes.data);
     } catch (error) {
       if (error.response?.status === 404) {
         navigate('/onboarding/creator');
@@ -86,6 +103,53 @@ const CreatorDashboard = () => {
       toast.error("Failed to load brands");
     } finally {
       setLoadingBrands(false);
+    }
+  };
+
+  const handleBrandClick = (brand) => {
+    setSelectedBrand(brand);
+    setRequestForm({
+      campaignType: 'paid',
+      deliverables: '',
+      budget: profile?.reelPrice || 10000,
+      productValue: 0,
+      timeline: '7 days',
+      brief: '',
+      barterDetails: ''
+    });
+    setShowRequestModal(true);
+  };
+
+  const handleSendRequest = async () => {
+    if (!selectedBrand || !requestForm.deliverables) {
+      toast.error("Please fill in deliverables");
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await campaignAPI.create({
+        receiverId: selectedBrand.id,
+        receiverType: 'brand',
+        campaignType: requestForm.campaignType,
+        deliverables: requestForm.deliverables,
+        budget: requestForm.campaignType === 'paid' ? requestForm.budget : 0,
+        productValue: requestForm.campaignType !== 'paid' ? requestForm.productValue : 0,
+        timeline: requestForm.timeline,
+        brief: requestForm.brief,
+        barterDetails: requestForm.barterDetails
+      });
+      
+      toast.success("Collaboration request sent! 🍊");
+      setShowRequestModal(false);
+      
+      // Refresh outgoing campaigns
+      const res = await campaignAPI.getOutgoing();
+      setOutgoingCampaigns(res.data);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to send request"));
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -132,8 +196,12 @@ const CreatorDashboard = () => {
       await campaignAPI.submitLink(campaign.id, contentLink);
       toast.success("Link submitted! Waiting for brand to verify.");
       
-      const res = await campaignAPI.getIncoming();
-      setIncomingCampaigns(res.data);
+      const [inRes, outRes] = await Promise.all([
+        campaignAPI.getIncoming(),
+        campaignAPI.getOutgoing()
+      ]);
+      setIncomingCampaigns(inRes.data);
+      setOutgoingCampaigns(outRes.data);
       setContentLink('');
       setShowCampaignModal(false);
     } catch (error) {
@@ -154,8 +222,12 @@ const CreatorDashboard = () => {
       await campaignAPI.rate(campaign.id, ratingForm.rating, ratingForm.feedback);
       toast.success("Rating submitted!");
       
-      const res = await campaignAPI.getIncoming();
-      setIncomingCampaigns(res.data);
+      const [inRes, outRes] = await Promise.all([
+        campaignAPI.getIncoming(),
+        campaignAPI.getOutgoing()
+      ]);
+      setIncomingCampaigns(inRes.data);
+      setOutgoingCampaigns(outRes.data);
       setShowCampaignModal(false);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to submit rating"));
@@ -184,8 +256,9 @@ const CreatorDashboard = () => {
 
   // Separate campaigns by status
   const pendingRequests = incomingCampaigns.filter(c => c.status === 'requested');
-  const activeCampaigns = incomingCampaigns.filter(c => ['accepted', 'paid', 'in_progress', 'link_submitted', 'link_verified'].includes(c.status));
-  const completedCampaigns = incomingCampaigns.filter(c => c.status === 'completed');
+  const activeIncoming = incomingCampaigns.filter(c => ['accepted', 'paid', 'in_progress', 'link_submitted', 'link_verified'].includes(c.status));
+  const activeOutgoing = outgoingCampaigns.filter(c => ['requested', 'accepted', 'paid', 'in_progress', 'link_submitted', 'link_verified'].includes(c.status));
+  const completedCampaigns = [...incomingCampaigns, ...outgoingCampaigns].filter(c => c.status === 'completed');
 
   if (loading) {
     return (
@@ -307,22 +380,25 @@ const CreatorDashboard = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-6 bg-muted/50 p-1 rounded-full">
-            <TabsTrigger value="requests" className="rounded-full data-[state=active]:bg-white px-6">
-              📥 New Requests ({pendingRequests.length})
+          <TabsList className="mb-6 bg-muted/50 p-1 rounded-full flex-wrap">
+            <TabsTrigger value="requests" className="rounded-full data-[state=active]:bg-white px-4">
+              📥 Incoming ({pendingRequests.length})
             </TabsTrigger>
-            <TabsTrigger value="active" className="rounded-full data-[state=active]:bg-white px-6">
-              🔄 Active ({activeCampaigns.length})
+            <TabsTrigger value="active" className="rounded-full data-[state=active]:bg-white px-4">
+              🔄 Active ({activeIncoming.length + activeOutgoing.length})
             </TabsTrigger>
-            <TabsTrigger value="completed" className="rounded-full data-[state=active]:bg-white px-6">
+            <TabsTrigger value="sent" className="rounded-full data-[state=active]:bg-white px-4">
+              📤 Sent ({outgoingCampaigns.length})
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="rounded-full data-[state=active]:bg-white px-4">
               ✅ Completed ({completedCampaigns.length})
             </TabsTrigger>
-            <TabsTrigger value="brands" className="rounded-full data-[state=active]:bg-white px-6">
-              🏢 Browse Brands
+            <TabsTrigger value="brands" className="rounded-full data-[state=active]:bg-white px-4">
+              🏢 Find Brands
             </TabsTrigger>
           </TabsList>
 
-          {/* New Requests Tab */}
+          {/* Incoming Requests Tab */}
           <TabsContent value="requests">
             <div className="mb-6">
               <h2 className="font-heading text-2xl font-bold">Collaboration Requests</h2>
@@ -341,6 +417,7 @@ const CreatorDashboard = () => {
                   <CampaignCard 
                     key={campaign.id} 
                     campaign={campaign}
+                    isIncoming={true}
                     onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
                   />
                 ))}
@@ -355,18 +432,54 @@ const CreatorDashboard = () => {
               <p className="text-muted-foreground">Ongoing collaborations</p>
             </div>
 
-            {activeCampaigns.length === 0 ? (
+            {(activeIncoming.length + activeOutgoing.length) === 0 ? (
               <div className="card-orange p-12 text-center">
                 <span className="text-5xl block mb-4">🔄</span>
                 <h3 className="font-heading text-xl font-bold mb-2">No active campaigns</h3>
-                <p className="text-muted-foreground">Accept requests to start collaborating!</p>
+                <p className="text-muted-foreground">Accept requests or reach out to brands!</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {activeCampaigns.map(campaign => (
+                {activeIncoming.map(campaign => (
                   <CampaignCard 
                     key={campaign.id} 
                     campaign={campaign}
+                    isIncoming={true}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+                {activeOutgoing.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    isIncoming={false}
+                    onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Sent Requests Tab */}
+          <TabsContent value="sent">
+            <div className="mb-6">
+              <h2 className="font-heading text-2xl font-bold">Sent Requests</h2>
+              <p className="text-muted-foreground">Requests you've sent to brands</p>
+            </div>
+
+            {outgoingCampaigns.length === 0 ? (
+              <div className="card-orange p-12 text-center">
+                <span className="text-5xl block mb-4">📤</span>
+                <h3 className="font-heading text-xl font-bold mb-2">No sent requests</h3>
+                <p className="text-muted-foreground">Go to "Find Brands" to send collaboration requests!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {outgoingCampaigns.map(campaign => (
+                  <CampaignCard 
+                    key={campaign.id} 
+                    campaign={campaign}
+                    isIncoming={false}
                     onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
                   />
                 ))}
@@ -393,6 +506,7 @@ const CreatorDashboard = () => {
                   <CampaignCard 
                     key={campaign.id} 
                     campaign={campaign}
+                    isIncoming={incomingCampaigns.some(c => c.id === campaign.id)}
                     onClick={() => { setSelectedCampaign(campaign); setShowCampaignModal(true); }}
                   />
                 ))}
@@ -403,8 +517,8 @@ const CreatorDashboard = () => {
           {/* Browse Brands Tab */}
           <TabsContent value="brands">
             <div className="mb-6">
-              <h2 className="font-heading text-2xl font-bold">Browse Brands</h2>
-              <p className="text-muted-foreground">Discover brands looking for creators</p>
+              <h2 className="font-heading text-2xl font-bold">Find Brands 🏢</h2>
+              <p className="text-muted-foreground">Click on a brand to send a collaboration request</p>
             </div>
 
             {loadingBrands ? (
@@ -421,7 +535,12 @@ const CreatorDashboard = () => {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {brands.map((brand, idx) => (
-                  <BrandCard key={brand.id} brand={brand} index={idx} />
+                  <BrandCard 
+                    key={brand.id} 
+                    brand={brand} 
+                    index={idx}
+                    onClick={() => handleBrandClick(brand)}
+                  />
                 ))}
               </div>
             )}
@@ -441,7 +560,11 @@ const CreatorDashboard = () => {
               <div className="bg-muted/50 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <p className="font-semibold">{selectedCampaign.senderName}</p>
+                    <p className="font-semibold">
+                      {incomingCampaigns.some(c => c.id === selectedCampaign.id) 
+                        ? selectedCampaign.senderName 
+                        : selectedCampaign.receiverName}
+                    </p>
                     <p className="text-sm text-muted-foreground capitalize">{selectedCampaign.campaignType.replace('_', ' ')}</p>
                   </div>
                   <Badge className={STATUS_CONFIG[selectedCampaign.status]?.color}>
@@ -475,13 +598,19 @@ const CreatorDashboard = () => {
               {selectedCampaign.identityUnlocked && (
                 <div className="bg-green-50 rounded-xl p-4">
                   <p className="font-semibold text-green-800 mb-2">🔓 Identity Unlocked</p>
-                  <p className="text-sm">Brand Instagram: <strong>{selectedCampaign.senderInstagram || 'N/A'}</strong></p>
+                  <p className="text-sm">
+                    Instagram: <strong>
+                      {incomingCampaigns.some(c => c.id === selectedCampaign.id) 
+                        ? selectedCampaign.senderInstagram 
+                        : selectedCampaign.receiverInstagram || 'N/A'}
+                    </strong>
+                  </p>
                 </div>
               )}
 
               {/* Action Buttons based on status */}
               <div className="space-y-3">
-                {selectedCampaign.status === 'requested' && (
+                {selectedCampaign.status === 'requested' && incomingCampaigns.some(c => c.id === selectedCampaign.id) && (
                   <div className="flex gap-3">
                     <Button onClick={() => handleAcceptRequest(selectedCampaign)} className="flex-1 btn-primary" disabled={actionLoading}>
                       {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
@@ -494,10 +623,21 @@ const CreatorDashboard = () => {
                   </div>
                 )}
 
+                {selectedCampaign.status === 'requested' && outgoingCampaigns.some(c => c.id === selectedCampaign.id) && (
+                  <div className="bg-yellow-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-yellow-500 mb-2" />
+                    <p className="text-yellow-800">Waiting for brand to respond...</p>
+                  </div>
+                )}
+
                 {selectedCampaign.status === 'accepted' && (
                   <div className="bg-blue-50 rounded-xl p-4 text-center">
                     <Clock className="w-8 h-8 mx-auto text-blue-500 mb-2" />
-                    <p className="text-blue-800">Waiting for brand to complete payment...</p>
+                    <p className="text-blue-800">
+                      {incomingCampaigns.some(c => c.id === selectedCampaign.id) 
+                        ? "Waiting for brand to complete payment..."
+                        : "Waiting for brand to accept and pay..."}
+                    </p>
                   </div>
                 )}
 
@@ -578,17 +718,138 @@ const CreatorDashboard = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Send Request to Brand Modal */}
+      <Dialog open={showRequestModal} onOpenChange={setShowRequestModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="font-heading text-xl flex items-center gap-2">
+              <Send className="w-5 h-5 text-primary" />
+              Send Collaboration Request
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedBrand && (
+            <div className="space-y-4 pt-4">
+              <div className="bg-muted/50 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-xl">
+                    🏢
+                  </div>
+                  <div>
+                    <p className="font-semibold">{selectedBrand.industry} Brand</p>
+                    <p className="text-sm text-muted-foreground">{selectedBrand.location}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2 text-sm">
+                  <Badge variant="secondary">{selectedBrand.budgetRange}</Badge>
+                  {selectedBrand.barterEnabled && <Badge>🤝 Barter</Badge>}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Collaboration Type</Label>
+                <Select value={requestForm.campaignType} onValueChange={(value) => setRequestForm(prev => ({ ...prev, campaignType: value }))}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="paid">💰 Paid Collaboration</SelectItem>
+                    <SelectItem value="barter_product">📦 Barter - Product</SelectItem>
+                    <SelectItem value="barter_service">🎁 Barter - Service</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>What you'll deliver *</Label>
+                <Textarea
+                  placeholder="e.g., I will create 2 reels and 3 stories featuring your product"
+                  value={requestForm.deliverables}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, deliverables: e.target.value }))}
+                  className="input-orange"
+                />
+              </div>
+
+              {requestForm.campaignType === 'paid' && (
+                <div className="space-y-2">
+                  <Label>Your Rate (₹)</Label>
+                  <Input
+                    type="number"
+                    value={requestForm.budget}
+                    onChange={(e) => setRequestForm(prev => ({ ...prev, budget: Number(e.target.value) }))}
+                    className="input-orange"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    You'll receive 90% after completion. 10% platform fee.
+                  </p>
+                </div>
+              )}
+
+              {requestForm.campaignType !== 'paid' && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Expected Product/Service Value (₹)</Label>
+                    <Input
+                      type="number"
+                      value={requestForm.productValue}
+                      onChange={(e) => setRequestForm(prev => ({ ...prev, productValue: Number(e.target.value) }))}
+                      className="input-orange"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>What product/service do you want?</Label>
+                    <Textarea
+                      placeholder="Describe what you'd like in exchange"
+                      value={requestForm.barterDetails}
+                      onChange={(e) => setRequestForm(prev => ({ ...prev, barterDetails: e.target.value }))}
+                      className="input-orange"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="space-y-2">
+                <Label>Timeline</Label>
+                <Input
+                  placeholder="e.g., 7 days"
+                  value={requestForm.timeline}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, timeline: e.target.value }))}
+                  className="input-orange"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Additional Notes (Optional)</Label>
+                <Textarea
+                  placeholder="Any additional information..."
+                  value={requestForm.brief}
+                  onChange={(e) => setRequestForm(prev => ({ ...prev, brief: e.target.value }))}
+                  className="input-orange"
+                />
+              </div>
+
+              <Button onClick={handleSendRequest} className="w-full btn-primary" disabled={actionLoading}>
+                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Send Request
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 // Campaign Card Component
-const CampaignCard = ({ campaign, onClick }) => {
+const CampaignCard = ({ campaign, isIncoming, onClick }) => {
   const StatusIcon = STATUS_CONFIG[campaign.status]?.icon || Clock;
   
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
+
+  const otherParty = isIncoming ? campaign.senderName : campaign.receiverName;
 
   return (
     <motion.div
@@ -604,7 +865,12 @@ const CampaignCard = ({ campaign, onClick }) => {
             <StatusIcon className="w-6 h-6 text-primary" />
           </div>
           <div>
-            <h3 className="font-semibold">{campaign.senderName}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">{otherParty}</h3>
+              <Badge variant="outline" className="text-xs">
+                {isIncoming ? '📥 Incoming' : '📤 Sent'}
+              </Badge>
+            </div>
             <p className="text-sm text-muted-foreground capitalize">
               {campaign.campaignType.replace('_', ' ')} • {campaign.deliverables}
             </p>
@@ -615,42 +881,44 @@ const CampaignCard = ({ campaign, onClick }) => {
             {STATUS_CONFIG[campaign.status]?.label}
           </Badge>
           <p className="text-sm text-muted-foreground mt-1">
-            {campaign.campaignType === 'paid' ? formatPrice(campaign.creatorPayout) : formatPrice(campaign.productValue)}
+            {campaign.campaignType === 'paid' ? formatPrice(campaign.creatorPayout || campaign.budget) : formatPrice(campaign.productValue)}
           </p>
         </div>
       </div>
       
       {campaign.identityUnlocked && (
         <div className="mt-3 pt-3 border-t border-orange-100 text-sm text-green-600">
-          🔓 Instagram: {campaign.senderInstagram || 'Available'}
+          🔓 Instagram: {isIncoming ? campaign.senderInstagram : campaign.receiverInstagram || 'Available'}
         </div>
       )}
     </motion.div>
   );
 };
 
-// Brand Card Component (Anonymous - No Name/Instagram shown)
-const BrandCard = ({ brand, index }) => {
+// Brand Card Component (Clickable - to send request)
+const BrandCard = ({ brand, index, onClick }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="card-orange p-6"
+      className="card-orange p-6 cursor-pointer hover:shadow-lg transition-shadow group"
+      onClick={onClick}
       data-testid={`brand-card-${brand.id}`}
     >
-      <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-3xl mb-4">
+      <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-3xl mb-4 group-hover:bg-primary/30 transition-colors">
         🏢
       </div>
       <h3 className="font-heading font-bold text-lg mb-1">{brand.industry} Brand</h3>
       <p className="text-sm text-muted-foreground mb-3">{brand.location}</p>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 mb-4">
         <Badge variant="secondary">{brand.budgetRange}</Badge>
         {brand.barterEnabled && <Badge>🤝 Barter</Badge>}
       </div>
-      <p className="text-xs text-muted-foreground mt-3">
-        Send request from their profile
-      </p>
+      <Button variant="outline" className="w-full rounded-full group-hover:bg-primary group-hover:text-white transition-colors">
+        <Send className="w-4 h-4 mr-2" />
+        Send Request
+      </Button>
     </motion.div>
   );
 };
