@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { 
   MapPin, Edit, LogOut, MessageSquare, Send, ExternalLink, 
   Search, Filter, X, Loader2, Eye, CheckCircle, Clock, AlertCircle,
-  Link as LinkIcon, Star
+  Link as LinkIcon, Star, Check
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
