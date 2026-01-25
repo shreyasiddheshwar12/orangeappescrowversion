@@ -1,138 +1,141 @@
-# Orange - Two-Way Creator Marketplace PRD
+# Orange - Creator-Brand Marketplace PRD
 
 ## Overview
-Orange is a two-sided creator marketplace connecting brands with content creators for paid and barter collaborations. The platform features a gated access system where profiles are progressively unlocked through credits and payments.
+Orange is a two-sided marketplace connecting creators and brands for paid and barter collaborations, with built-in identity protection, content previews, and trust systems.
 
 ## Tech Stack
-- **Backend:** FastAPI (Python) with MongoDB
-- **Frontend:** React with Tailwind CSS, shadcn/ui
-- **Auth:** JWT-based authentication
-- **Payments:** Razorpay (TEST MODE with demo credits)
-- **Media:** Cloudinary (optional, for uploads)
+- **Backend:** FastAPI (Python) + MongoDB
+- **Frontend:** React + Tailwind CSS + shadcn/ui
+- **Authentication:** JWT-based
+- **Payments:** Razorpay (Test Mode - MOCKED)
 
-## Core Features (Implemented)
+## Core Principles
+1. **Discovery is free, identity is gated** - Brands see creator niches/prices/location but NOT names or Instagram handles
+2. **Identity unlocks after commitment** - Paid collabs unlock after payment; Barter collabs unlock after link verification
+3. **All communication stays on Orange** - External contact sharing blocked until identity unlock
 
-### 1. Authentication System ✅
-- Email/password signup and login
-- Role-based access (creator, business, admin)
-- JWT token-based authentication
-- Onboarding flow for profile completion
+---
 
-### 2. Instagram Verification (MOCKED) ✅
-- Simulated Instagram OAuth for demo purposes
-- Auto-generates follower counts (5K-500K) and engagement rates
-- System-calculated engagement rate (not user-editable)
-- Note: In production, this would use real Instagram Graph API OAuth
+## ✅ Implemented Features (V2)
 
-### 3. Two-Way Marketplace Discovery ✅
-- **Layer 1 (Free):** Brands discover creators, creators discover brands
-- Anonymized display (rounded followers "50K+", approximate engagement "~5.8%")
-- Filter by niche, location, barter availability, follower range
-- Lock icons indicate unlockable profiles
+### Authentication & Onboarding
+- [x] User signup/login with JWT
+- [x] Role selection (Creator/Brand)
+- [x] Multi-step onboarding (5 steps for creators)
+- [x] **DUMMY Instagram verification** - Generates simulated followers/engagement
+- [x] Creator visibility subscription toggle (MOCKED - ₹50/month)
 
-### 4. Credit-Based Unlock System ✅
-- **Pricing:** ₹200 = 5 credits (7-day expiry)
-- **Context Unlock:** 1 credit unlocks full profile (bio, exact metrics, rates)
-- Instagram handle remains hidden until campaign payment
-- Demo credits available for testing
+### Marketplace Discovery
+- [x] Anonymous creator listing (no names/handles shown)
+- [x] Filter by niche, barter-only
+- [x] Partial data shown: niche, location, pricing, engagement rate
+- [x] Orange watermark overlay on preview cards
 
-### 5. Payment Integration ✅
-- Razorpay TEST MODE integration
-- Demo credits fallback when no valid keys configured
-- Unlock Pack purchase flow
-- Escrow payment preparation (pending full implementation)
+### Collaboration Flow
+- [x] **Paid Collaborations**
+  - Full budget goes to escrow
+  - 10% platform commission
+  - Identity unlocks immediately after payment
+  
+- [x] **Barter Collaborations** (Product & Service)
+  - 10% fee on declared product/service value
+  - Identity unlocks AFTER link verification (not payment)
+  - Shipping details tracking
+  - Product received confirmation
 
-### 6. Creator Dashboard ✅
-- Profile display with rates and niches
-- Incoming campaign requests view
-- Edit profile functionality
+### Campaign States
+- `requested` → `accepted` → `paid` → `in_progress` → `link_submitted` → `link_verified` → `completed`
+- Also: `disputed`, `cancelled`
 
-### 7. Brand Dashboard ✅
-- Creator marketplace browsing
-- Credit balance display
-- Unlock modal for gated access
-- Campaigns tab (pending campaigns implementation)
+### Messaging
+- [x] In-app chat (only available after payment)
+- [x] External contact blocking (Instagram handles, phone numbers, links blocked until identity unlock)
 
-## Database Schema
+### Ratings & Feedback
+- [x] 1-5 star ratings after completion
+- [x] Mandatory feedback comments
+- [x] Average rating calculation and display
 
-### Collections:
-- `users` - Authentication and role data
-- `creator_profiles` - Creator details, Instagram, rates
-- `brand_profiles` - Brand details, industry, budget
-- `credits` - User credit balances and expiry
-- `profile_unlocks` - Track which profiles are unlocked
-- `collab_requests` - Two-way request system
-- `campaigns` - Campaign details after acceptance
-- `messages` - Chat messages with anti-bypass
-- `payments` - Payment records
-- `bypass_attempts` - Logged anti-bypass violations
+### Security Features
+- [x] Identity masking until unlock conditions met
+- [x] Message filtering for external contacts
+- [x] Blacklist system for violations
+- [x] Report/dispute mechanism
+
+---
+
+## MOCKED Components (MVP)
+- **Instagram OAuth:** Using dummy verification with simulated metrics
+- **Payments:** Test mode only, no real money processing
+- **Creator Subscription:** Toggle-based visibility, no actual payment required
+- **Content Watermarking:** CSS overlay only, no server-side processing
+
+---
 
 ## API Endpoints
 
-### Auth
-- POST `/api/auth/signup` - Create account
-- POST `/api/auth/login` - Login
-- GET `/api/auth/me` - Get current user
+### Authentication
+- `POST /api/auth/signup` - Create account
+- `POST /api/auth/login` - Login and get JWT
+- `POST /api/auth/instagram/verify` - **DUMMY** Instagram verification
+- `GET /api/auth/me` - Get current user
+
+### Profiles
+- `POST /api/creator/profile` - Create/update creator profile
+- `GET /api/creator/profile` - Get own creator profile
+- `POST /api/creator/subscription/toggle` - Toggle marketplace visibility
+- `POST /api/business/profile` - Create/update brand profile
+- `GET /api/business/profile` - Get own brand profile
 
 ### Marketplace
-- GET `/api/marketplace/creators` - Discover creators (Layer 1)
-- GET `/api/marketplace/brands` - Discover brands (Layer 1)
-- GET `/api/marketplace/creators/{id}/unlocked` - View unlocked profile
-- POST `/api/marketplace/creator/{id}/unlock` - Unlock a profile
+- `GET /api/marketplace/creators` - Browse creators (anonymous)
+- `GET /api/marketplace/brands` - Browse brands (anonymous)
 
-### Payments
-- GET `/api/payments/credits` - Get credit balance
-- POST `/api/payments/unlock-pack/order` - Create unlock pack order
-- POST `/api/payments/unlock-pack/demo` - Add demo credits (testing)
-- POST `/api/payments/escrow/{campaign_id}/order` - Create escrow order
+### Campaigns
+- `POST /api/campaigns/` - Create campaign request
+- `GET /api/campaigns/incoming` - Get received requests
+- `GET /api/campaigns/outgoing` - Get sent requests
+- `GET /api/campaigns/{id}` - Get campaign details
+- `PATCH /api/campaigns/{id}/respond?action=accept|reject` - Respond to request
+- `POST /api/campaigns/{id}/pay` - Pay escrow/fee
+- `POST /api/campaigns/{id}/submit-link` - Submit reel/story link
+- `POST /api/campaigns/{id}/verify-link` - Verify submitted link
+- `POST /api/campaigns/{id}/complete` - Mark as complete
+- `POST /api/campaigns/{id}/rate` - Submit rating
+- `POST /api/campaigns/{id}/report` - Report issue
 
-### Instagram
-- POST `/api/instagram/verify` - Verify Instagram (MOCKED)
+### Messages
+- `GET /api/messages/{campaignId}` - Get messages
+- `POST /api/messages/{campaignId}` - Send message
 
-### Admin
-- GET `/api/admin/stats` - Platform statistics
-- GET `/api/admin/bypass-attempts` - View flagged messages
+---
 
-## Test Accounts (Seeded)
-```
-Admin: admin@orange.com / admin123
-Creator: creator1@orange.com / password123
-Brand: brand1@orange.com / password123 (starts with 5 credits)
-```
+## Test Credentials
+- **Creator:** creator1@orange.com / password123
+- **Brand:** brand1@orange.com / password123
+- **Admin:** admin@orange.com / admin123
 
-## What's Working (Jan 2026)
-1. ✅ Full authentication flow with session persistence
-2. ✅ Logout works correctly (no 404 error)
-3. ✅ Creator and brand dashboards
-4. ✅ **Two-way marketplace discovery** (brands see creators, creators see brands)
-5. ✅ **Symmetric unlock flow** (both sides can unlock profiles with credits)
-6. ✅ Credit-based unlock system with proper decrement
-7. ✅ Demo credits for testing (Razorpay TEST MODE)
-8. ✅ Instagram verification (simulated) - required for marketplace visibility
-9. ✅ Admin statistics endpoint
-10. ✅ Responsive UI with Orange theme
-11. ✅ New creator/brand onboarding properly adds to marketplace
-12. ✅ Profile routes protected - no login redirect for authenticated users
-13. ✅ **Past Collaborations feature for brands** - shown on unlocked profiles
-14. ✅ Error messages are strings (no raw objects in JSX)
+---
 
-## Pending Features (P1)
-1. ⏳ Two-way request flow (backend ready, frontend pending)
-2. ⏳ Campaign creation after request acceptance
-3. ⏳ Chat with anti-bypass filtering
-4. ⏳ Escrow payment flow for identity unlock
-5. ⏳ Campaign status tracking
+## Future Tasks (Backlog)
 
-## Future Features (P2)
-1. Admin dashboard UI
-2. Barter collaboration tracking
-3. Analytics and insights
-4. Email notifications
-5. Real Instagram OAuth integration
-6. Production Razorpay keys
+### P1 - Post-MVP
+- [ ] Real Instagram OAuth integration
+- [ ] Razorpay production mode
+- [ ] Server-side content watermarking/blurring
+- [ ] Advanced content previews (video trimming, muting)
 
-## Known Limitations
-- Instagram OAuth is **MOCKED** for demo - generates random data
-- Razorpay uses **TEST MODE** with demo credits fallback
-- Chat anti-bypass system backend-ready but UI not connected
-- No email notifications implemented
+### P2 - Enhancements
+- [ ] Admin panel for disputes/blacklisting
+- [ ] Brand-side creator rejection (hide from view)
+- [ ] Auto-flag for deleted content
+- [ ] Push notifications
+- [ ] Analytics dashboard
+
+---
+
+## Last Updated
+January 25, 2025
+
+## Version
+V2.0 - MVP Complete
