@@ -687,6 +687,11 @@ async def create_campaign(
     """
     Send a campaign request to a creator or brand.
     This is the START of the collaboration flow.
+    
+    Campaign Types:
+    - paid: Brand pays full amount to escrow
+    - barter_product: Brand sends product, pays 10% fee
+    - barter_service: Brand provides service, pays 10% fee
     """
     now = datetime.now(timezone.utc)
     campaign_id = str(uuid.uuid4())
@@ -700,6 +705,7 @@ async def create_campaign(
         raise HTTPException(status_code=400, detail="Complete your profile first")
     
     sender_name = sender_profile.get("brandName") if sender_type == "business" else sender_profile.get("name")
+    sender_instagram = sender_profile.get("instagramUsername")
     
     # Get receiver info
     receiver_collection = "creator_profiles" if campaign.receiverType == "creator" else "brand_profiles"
@@ -713,16 +719,24 @@ async def create_campaign(
     
     receiver_name = receiver_profile.get("name") if campaign.receiverType == "creator" else receiver_profile.get("brandName")
     receiver_user_id = receiver_profile.get("userId")
+    receiver_instagram = receiver_profile.get("instagramUsername")
     
-    # Calculate amounts for paid collabs
+    # Calculate amounts based on campaign type
     escrow_amount = 0
     platform_commission = 0
     creator_payout = 0
+    barter_fee = 0
+    product_value = campaign.productValue or 0
     
     if campaign.campaignType == "paid" and campaign.budget > 0:
+        # Paid collab: Full budget goes to escrow, 10% commission to Orange
         escrow_amount = campaign.budget
         platform_commission = round(escrow_amount * (PLATFORM_COMMISSION_PERCENT / 100), 2)
         creator_payout = escrow_amount - platform_commission
+    elif campaign.campaignType in ["barter_product", "barter_service"]:
+        # Barter collab: 10% fee on declared product/service value
+        if product_value > 0:
+            barter_fee = round(product_value * (BARTER_FEE_PERCENT / 100), 2)
     
     campaign_doc = {
         "id": campaign_id,
@@ -730,17 +744,21 @@ async def create_campaign(
         "senderUserId": current_user["id"],
         "senderType": sender_type,
         "senderName": sender_name,
+        "senderInstagram": sender_instagram,  # Stored but hidden until unlock
         "receiverId": campaign.receiverId,
         "receiverUserId": receiver_user_id,
         "receiverType": campaign.receiverType,
         "receiverName": receiver_name,
+        "receiverInstagram": receiver_instagram,  # Stored but hidden until unlock
         "campaignType": campaign.campaignType,
         "deliverables": campaign.deliverables,
         "budget": campaign.budget or 0,
+        "productValue": product_value,
+        "barterFee": barter_fee,
         "timeline": campaign.timeline or "",
         "brief": campaign.brief or "",
         "barterDetails": campaign.barterDetails or "",
-        "status": "pending",  # pending -> accepted -> awaiting_payment -> active -> content_submitted -> completed
+        "status": "requested",  # requested -> accepted -> payment_pending -> paid -> in_progress -> link_submitted -> link_verified -> completed
         "paymentStatus": "pending",
         "escrowAmount": escrow_amount,
         "platformCommission": platform_commission,
@@ -748,6 +766,7 @@ async def create_campaign(
         "identityUnlocked": False,
         "chatEnabled": False,
         "contentLink": None,
+        "linkVerified": False,
         "shippingDetails": None,
         "productReceived": False,
         "createdAt": now.isoformat(),
@@ -757,7 +776,27 @@ async def create_campaign(
     
     await db.campaigns.insert_one(campaign_doc)
     
-    return CampaignResponse(**{k: v for k, v in campaign_doc.items() if k != "_id"})
+    # Return response with identity hidden
+    response_doc = {**campaign_doc}
+    response_doc["senderInstagram"] = None  # Hidden until unlock
+    response_doc["receiverInstagram"] = None  # Hidden until unlock
+    
+    return CampaignResponse(**{k: v for k, v in response_doc.items() if k != "_id"})
+
+def mask_campaign_identity(campaign: dict, current_user_id: str) -> dict:
+    """Helper to mask identity in campaign responses based on unlock status"""
+    c = {**campaign}
+    
+    if not c.get("identityUnlocked", False):
+        # Hide names and Instagram handles
+        if c.get("senderUserId") != current_user_id:
+            c["senderName"] = "Brand" if c.get("senderType") == "business" else "Creator"
+        if c.get("receiverUserId") != current_user_id:
+            c["receiverName"] = "Creator" if c.get("receiverType") == "creator" else "Brand"
+        c["senderInstagram"] = None
+        c["receiverInstagram"] = None
+    
+    return c
 
 @campaign_router.get("/incoming", response_model=List[CampaignResponse])
 async def get_incoming_campaigns(current_user: dict = Depends(get_current_user)):
@@ -767,12 +806,10 @@ async def get_incoming_campaigns(current_user: dict = Depends(get_current_user))
         {"_id": 0}
     ).sort("createdAt", -1).to_list(100)
     
-    # Mask identity for campaigns where payment not made
     result = []
     for c in campaigns:
-        if not c.get("identityUnlocked", False):
-            c["senderName"] = "Brand" if c["senderType"] == "business" else "Creator"
-        result.append(CampaignResponse(**c))
+        masked = mask_campaign_identity(c, current_user["id"])
+        result.append(CampaignResponse(**masked))
     
     return result
 
