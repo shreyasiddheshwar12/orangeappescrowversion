@@ -67,10 +67,12 @@ export const authAPI = {
   verifyInstagram: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
 };
 
-// Creator API
+// Creator-specific API
 export const creatorAPI = {
   createProfile: (data) => api.post('/creator/profile', data),
   getProfile: () => api.get('/creator/profile'),
+  // Toggle visibility in marketplace (₹50/month subscription - MOCKED for MVP)
+  toggleVisibility: (visible) => api.post(`/creator/subscription/toggle?visible=${visible}`),
 };
 
 // Business/Brand API
