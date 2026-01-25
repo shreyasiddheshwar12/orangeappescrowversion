@@ -736,11 +736,47 @@ const BusinessDashboard = () => {
 
               {/* Action Buttons based on status */}
               <div className="space-y-3">
-                {selectedCampaign.status === 'accepted' && (
+                {/* Accept/Reject for incoming requests from creators */}
+                {selectedCampaign.status === 'requested' && isIncomingCampaign(selectedCampaign) && (
+                  <div className="flex gap-3">
+                    <Button onClick={() => handleAcceptRequest(selectedCampaign)} className="flex-1 btn-primary" disabled={actionLoading}>
+                      {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                      Accept
+                    </Button>
+                    <Button onClick={() => handleRejectRequest(selectedCampaign)} variant="outline" className="flex-1 rounded-full" disabled={actionLoading}>
+                      <X className="w-4 h-4 mr-2" />
+                      Decline
+                    </Button>
+                  </div>
+                )}
+
+                {/* Waiting for creator to accept (outgoing requests) */}
+                {selectedCampaign.status === 'requested' && !isIncomingCampaign(selectedCampaign) && (
+                  <div className="bg-yellow-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-yellow-500 mb-2" />
+                    <p className="text-yellow-800">Waiting for creator to respond...</p>
+                  </div>
+                )}
+
+                {selectedCampaign.status === 'accepted' && !isIncomingCampaign(selectedCampaign) && (
                   <Button onClick={() => handlePayCampaign(selectedCampaign)} className="w-full btn-primary" disabled={actionLoading}>
                     {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                     Pay {selectedCampaign.campaignType === 'paid' ? formatPrice(selectedCampaign.escrowAmount || selectedCampaign.budget) : formatPrice(selectedCampaign.barterFee)} to Proceed
                   </Button>
+                )}
+
+                {selectedCampaign.status === 'accepted' && isIncomingCampaign(selectedCampaign) && (
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-blue-500 mb-2" />
+                    <p className="text-blue-800">You accepted! Waiting for creator to pay...</p>
+                  </div>
+                )}
+
+                {(selectedCampaign.status === 'paid' || selectedCampaign.status === 'in_progress') && (
+                  <div className="bg-purple-50 rounded-xl p-4 text-center">
+                    <Clock className="w-8 h-8 mx-auto text-purple-500 mb-2" />
+                    <p className="text-purple-800">Waiting for creator to submit content link...</p>
+                  </div>
                 )}
 
                 {selectedCampaign.status === 'link_submitted' && (
