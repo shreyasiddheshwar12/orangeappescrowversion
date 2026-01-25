@@ -19,7 +19,6 @@ const Chat = () => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [payingEscrow, setPayingEscrow] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -34,12 +33,14 @@ const Chat = () => {
 
   const loadData = async () => {
     try {
-      const [campaignRes, messagesRes] = await Promise.all([
-        campaignsAPI.getById(requestId),
-        messagesAPI.getMessages(requestId)
-      ]);
+      const campaignRes = await campaignAPI.getById(requestId);
       setCampaign(campaignRes.data);
-      setMessages(messagesRes.data);
+      
+      // Only load messages if chat is enabled
+      if (campaignRes.data.chatEnabled) {
+        const messagesRes = await messagesAPI.getMessages(requestId);
+        setMessages(messagesRes.data);
+      }
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to load chat"));
       navigate(-1);
@@ -49,6 +50,7 @@ const Chat = () => {
   };
 
   const loadMessages = async () => {
+    if (!campaign?.chatEnabled) return;
     try {
       const response = await messagesAPI.getMessages(requestId);
       setMessages(response.data);
