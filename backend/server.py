@@ -427,15 +427,21 @@ async def verify_instagram(
     request: InstagramVerifyRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Simulated Instagram OAuth verification for MVP"""
+    """
+    DUMMY Instagram verification for MVP.
+    In production, this would use Instagram OAuth.
+    For now, it just accepts any username and generates fake metrics.
+    """
     username = request.instagramUsername.replace("@", "").strip()
     
     if not username:
         raise HTTPException(status_code=400, detail="Instagram username is required")
     
-    # Simulate Instagram API response
+    # Generate simulated/dummy data
+    import random
     simulated_user_id = f"ig_{uuid.uuid4().hex[:12]}"
-    engagement_rate = generate_simulated_engagement_rate()
+    engagement_rate = round(random.uniform(2.0, 12.0), 1)  # Random ER between 2-12%
+    followers_count = random.randint(5000, 500000)  # Random followers between 5K-500K
     
     # Update user record
     await db.users.update_one(
@@ -443,8 +449,9 @@ async def verify_instagram(
         {"$set": {
             "instagramVerified": True,
             "instagramUserId": simulated_user_id,
-            "instagramUsername": username,
-            "engagementRate": engagement_rate
+            "instagramUsername": f"@{username}",
+            "engagementRate": engagement_rate,
+            "followersCount": followers_count
         }}
     )
     
@@ -455,7 +462,7 @@ async def verify_instagram(
         {"$set": {
             "instagramVerified": True,
             "instagramUserId": simulated_user_id,
-            "instagramUsername": username,
+            "instagramUsername": f"@{username}",
             "engagementRate": engagement_rate
         }}
     )
@@ -463,8 +470,9 @@ async def verify_instagram(
     return InstagramVerifyResponse(
         success=True,
         instagramUserId=simulated_user_id,
+        followersCount=followers_count,
         engagementRate=engagement_rate,
-        message="Instagram verified successfully! (Demo Mode)"
+        message=f"Instagram @{username} verified! (Demo Mode - Simulated data)"
     )
 
 # ============== CREATOR PROFILE ENDPOINTS ==============
