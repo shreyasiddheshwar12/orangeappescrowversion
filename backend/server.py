@@ -210,28 +210,31 @@ class BrandDiscovery(BaseModel):
 class CampaignCreate(BaseModel):
     receiverId: str  # Creator or Brand profile ID
     receiverType: Literal["creator", "brand"]
-    campaignType: Literal["paid", "barter"]
+    campaignType: Literal["paid", "barter_product", "barter_service"]
     deliverables: str
     budget: Optional[float] = 0  # For paid collabs
+    productValue: Optional[float] = 0  # For barter - declared product/service value
     timeline: Optional[str] = ""
     brief: Optional[str] = ""
-    barterDetails: Optional[str] = ""  # For barter collabs
+    barterDetails: Optional[str] = ""  # Product/service description for barter
 
 class CampaignResponse(BaseModel):
     id: str
     senderId: str
     senderType: str
-    senderName: str  # Only shown after payment
+    senderName: str  # Hidden until payment
     receiverId: str
     receiverType: str
-    receiverName: str  # Only shown after payment
-    campaignType: str
+    receiverName: str  # Hidden until payment
+    campaignType: str  # paid, barter_product, barter_service
     deliverables: str
     budget: float
+    productValue: float  # For barter
+    barterFee: float  # 10% of productValue
     timeline: str
     brief: str
     barterDetails: str
-    status: str  # pending, accepted, rejected, awaiting_payment, active, content_submitted, completed, cancelled
+    status: str  # requested, accepted, payment_pending, paid, in_progress, link_submitted, link_verified, completed, disputed, cancelled
     paymentStatus: str  # pending, paid
     escrowAmount: float
     platformCommission: float
@@ -239,11 +242,32 @@ class CampaignResponse(BaseModel):
     identityUnlocked: bool
     chatEnabled: bool
     contentLink: Optional[str] = None
+    linkVerified: bool = False
     shippingDetails: Optional[str] = None
     productReceived: bool = False
+    # Instagram handles - only shown after unlock
+    senderInstagram: Optional[str] = None
+    receiverInstagram: Optional[str] = None
     createdAt: str
     updatedAt: str
     expiresAt: Optional[str] = None
+
+# Rating Models
+class RatingCreate(BaseModel):
+    campaignId: str
+    rating: int  # 1-5 stars
+    feedback: str  # Mandatory feedback
+
+class RatingResponse(BaseModel):
+    id: str
+    campaignId: str
+    raterId: str
+    raterType: str
+    targetId: str
+    targetType: str
+    rating: int
+    feedback: str
+    createdAt: str
 
 # Message Models
 class MessageCreate(BaseModel):
