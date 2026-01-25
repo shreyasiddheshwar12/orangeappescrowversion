@@ -286,8 +286,12 @@ const BusinessDashboard = () => {
       toast.success("Rating submitted!");
       
       // Refresh campaigns
-      const campaignsRes = await campaignAPI.getOutgoing();
-      setCampaigns(campaignsRes.data);
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
       setShowCampaignModal(false);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to submit rating"));
@@ -295,6 +299,13 @@ const BusinessDashboard = () => {
       setActionLoading(false);
     }
   };
+
+  // Helper: determine if campaign is incoming or outgoing
+  const isIncomingCampaign = (campaign) => incomingCampaigns.some(c => c.id === campaign.id);
+  
+  // Separate campaigns
+  const pendingIncoming = incomingCampaigns.filter(c => c.status === 'requested');
+  const allCampaigns = [...outgoingCampaigns, ...incomingCampaigns.filter(c => c.status !== 'requested')];
 
   const formatPrice = (price) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
