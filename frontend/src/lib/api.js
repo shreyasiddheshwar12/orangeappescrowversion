@@ -67,6 +67,19 @@ export const authAPI = {
   verifyInstagram: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
 };
 
+// Instagram Verification API (simulated)
+export const instagramAPI = {
+  verify: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
+};
+
+// Upload API (placeholder - not implemented in MVP)
+export const uploadAPI = {
+  uploadFile: async (file) => {
+    // For MVP, we don't have real file upload - just return a placeholder URL
+    return { data: { url: '' } };
+  },
+};
+
 // Creator-specific API
 export const creatorAPI = {
   createProfile: (data) => api.post('/creator/profile', data),
