@@ -762,27 +762,17 @@ class TestCampaignCompletion:
             headers={"Authorization": f"Bearer {brand_auth['token']}"}
         )
         
-        # Brand rates creator
+        # Brand rates creator (uses query params, not JSON body)
         rate_res = requests.post(
-            f"{BASE_URL}/api/campaigns/{campaign_id}/rate",
-            headers={"Authorization": f"Bearer {brand_auth['token']}"},
-            json={
-                "campaignId": campaign_id,
-                "rating": 5,
-                "feedback": "Excellent work! Great content quality and timely delivery."
-            }
+            f"{BASE_URL}/api/campaigns/{campaign_id}/rate?rating=5&feedback=Excellent%20work%21%20Great%20content%20quality%20and%20timely%20delivery.",
+            headers={"Authorization": f"Bearer {brand_auth['token']}"}
         )
         assert rate_res.status_code == 200
         
         # Creator rates brand
         rate_res2 = requests.post(
-            f"{BASE_URL}/api/campaigns/{campaign_id}/rate",
-            headers={"Authorization": f"Bearer {creator_auth['token']}"},
-            json={
-                "campaignId": campaign_id,
-                "rating": 4,
-                "feedback": "Good collaboration, clear brief and prompt payment."
-            }
+            f"{BASE_URL}/api/campaigns/{campaign_id}/rate?rating=4&feedback=Good%20collaboration%2C%20clear%20brief%20and%20prompt%20payment.",
+            headers={"Authorization": f"Bearer {creator_auth['token']}"}
         )
         assert rate_res2.status_code == 200
         
@@ -878,13 +868,13 @@ class TestChatFunctionality:
         )
         assert pay_res.json()["chatEnabled"] == True
         
-        # Send message - should work
+        # Send message - should work (201 Created is correct)
         msg_res = requests.post(
             f"{BASE_URL}/api/messages/{campaign_id}",
             headers={"Authorization": f"Bearer {brand_auth['token']}"},
             json={"content": "Hello! Looking forward to working with you."}
         )
-        assert msg_res.status_code == 200
+        assert msg_res.status_code in [200, 201], f"Expected 200 or 201, got {msg_res.status_code}"
         
         # Get messages
         get_msg_res = requests.get(
