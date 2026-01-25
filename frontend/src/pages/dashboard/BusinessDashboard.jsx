@@ -146,10 +146,56 @@ const BusinessDashboard = () => {
       setShowRequestModal(false);
       
       // Refresh campaigns
-      const res = await campaignAPI.getOutgoing();
-      setCampaigns(res.data);
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to send request"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAcceptRequest = async (campaign) => {
+    setActionLoading(true);
+    try {
+      await campaignAPI.respond(campaign.id, 'accept');
+      toast.success("Request accepted! Creator will be notified to proceed.");
+      
+      // Refresh campaigns
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
+      setShowCampaignModal(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to accept"));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectRequest = async (campaign) => {
+    setActionLoading(true);
+    try {
+      await campaignAPI.respond(campaign.id, 'reject');
+      toast.success("Request declined.");
+      
+      // Refresh campaigns
+      const [outRes, inRes] = await Promise.all([
+        campaignAPI.getOutgoing(),
+        campaignAPI.getIncoming()
+      ]);
+      setOutgoingCampaigns(outRes.data);
+      setIncomingCampaigns(inRes.data);
+      setShowCampaignModal(false);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Failed to reject"));
     } finally {
       setActionLoading(false);
     }
