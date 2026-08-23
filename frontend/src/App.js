@@ -13,6 +13,7 @@ import BusinessDashboard from './pages/dashboard/BusinessDashboard';
 import CreatorProfile from './pages/profile/CreatorProfile';
 import BusinessProfile from './pages/profile/BusinessProfile';
 import Chat from './pages/Chat';
+import InstagramCallback from './pages/InstagramCallback';
 
 import './App.css';
 
@@ -78,6 +79,7 @@ function AppRoutes() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
+      <Route path="/instagram/callback" element={<ProtectedRoute><InstagramCallback /></ProtectedRoute>} />
       
       {/* Onboarding Routes */}
       <Route 

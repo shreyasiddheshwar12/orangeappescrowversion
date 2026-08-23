@@ -69,7 +69,9 @@ export const authAPI = {
 
 // Instagram Verification API (simulated)
 export const instagramAPI = {
-  verify: (username) => api.post('/auth/instagram/verify', { instagramUsername: username }),
+  connect: () => api.get('/auth/instagram/connect'),
+  status: () => api.get('/auth/instagram/status'),
+  disconnect: () => api.post('/auth/instagram/disconnect'),
 };
 
 // Upload API (placeholder - not implemented in MVP)

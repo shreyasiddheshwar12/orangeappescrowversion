@@ -74,6 +74,10 @@ Build a Gen-Z friendly two-sided marketplace where:
 - `MONGO_URL` - MongoDB connection string
 - `DB_NAME` - Database name
 - `JWT_SECRET` - JWT signing secret
+- `INSTAGRAM_APP_ID` - Meta app ID for Instagram Login
+- `INSTAGRAM_APP_SECRET` - Meta app secret for Instagram Login
+- `INSTAGRAM_REDIRECT_URI` - OAuth callback URL (local: `http://localhost:8000/api/auth/instagram/callback`)
+- `FRONTEND_URL` - Frontend URL for OAuth redirects (local: `http://localhost:3000`)
 - `CLOUDINARY_CLOUD_NAME` - Cloudinary cloud name
 - `CLOUDINARY_API_KEY` - Cloudinary API key
 - `CLOUDINARY_API_SECRET` - Cloudinary API secret

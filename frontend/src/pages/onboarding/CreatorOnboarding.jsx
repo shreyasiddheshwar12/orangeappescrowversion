@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
@@ -66,6 +66,28 @@ const CreatorOnboarding = () => {
       ...prev,
       rates: { ...prev.rates, [field]: value }
     }));
+  };
+
+  useEffect(() => {
+    instagramAPI.status().then(({ data }) => {
+      if (!data.connected) return;
+      updateField('instagramHandle', data.instagramUsername ? `@${data.instagramUsername.replace('@', '')}` : '');
+      updateField('instagramUrl', data.instagramUsername ? `https://instagram.com/${data.instagramUsername.replace('@', '')}` : '');
+      updateField('followersCount', data.followersCount?.toString() || '0');
+      updateField('engagementRate', data.engagementRate?.toString() || '0');
+      setInstagramVerified(true);
+    }).catch(() => {});
+  }, []);
+
+  const connectInstagram = async () => {
+    setVerifyingInstagram(true);
+    try {
+      const { data } = await instagramAPI.connect();
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Instagram connection is not configured yet.'));
+      setVerifyingInstagram(false);
+    }
   };
 
   const toggleNiche = (niche) => {
@@ -260,22 +282,16 @@ const CreatorOnboarding = () => {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Handle *</Label>
+                <Label htmlFor="instagram">Instagram Account *</Label>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="instagram"
-                    placeholder="@yourusername"
+                    placeholder="Connect your Instagram account"
                     value={formData.instagramHandle}
-                    onChange={(e) => {
-                      const handle = e.target.value;
-                      updateField('instagramHandle', handle);
-                      updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
-                      setInstagramVerified(false);
-                    }}
                     className="input-orange pl-10"
                     data-testid="creator-instagram-input"
-                    disabled={instagramVerified}
+                    disabled
                   />
                 </div>
               </div>
@@ -284,54 +300,16 @@ const CreatorOnboarding = () => {
               {!instagramVerified ? (
                 <div className="space-y-3">
                   <Button
-                    onClick={async () => {
-                      if (!formData.instagramHandle) {
-                        toast.error("Enter your Instagram handle first");
-                        return;
-                      }
-                      setVerifyingInstagram(true);
-                      try {
-                        const response = await instagramAPI.verify(formData.instagramHandle);
-                        const data = response.data;
-                        updateField('followersCount', data.followersCount.toString());
-                        updateField('engagementRate', data.engagementRate.toString());
-                        setInstagramVerified(true);
-                        toast.success(`Verified! ${data.followersCount.toLocaleString()} followers, ${data.engagementRate}% engagement 🎉`);
-                      } catch (error) {
-                        // Even if API fails, allow through with dummy data
-                        updateField('followersCount', '50000');
-                        updateField('engagementRate', '5.0');
-                        setInstagramVerified(true);
-                        toast.success("Verified! (Demo Mode)");
-                      } finally {
-                        setVerifyingInstagram(false);
-                      }
-                    }}
-                    disabled={verifyingInstagram || !formData.instagramHandle}
+                    onClick={connectInstagram}
+                    disabled={verifyingInstagram}
                     className="w-full btn-primary"
                     data-testid="verify-instagram-btn"
                   >
                     {verifyingInstagram ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Connecting...</>
                     ) : (
-                      <><Instagram className="w-4 h-4 mr-2" /> Verify Instagram (Demo)</>
+                      <><Instagram className="w-4 h-4 mr-2" /> Connect Instagram</>
                     )}
-                  </Button>
-                  
-                  {/* Skip option */}
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      updateField('instagramHandle', '@demo_creator');
-                      updateField('followersCount', '25000');
-                      updateField('engagementRate', '6.5');
-                      setInstagramVerified(true);
-                      toast.success("Skipped! Using demo data.");
-                    }}
-                    className="w-full rounded-full text-muted-foreground"
-                    data-testid="skip-instagram-btn"
-                  >
-                    Skip for now (use demo data)
                   </Button>
                 </div>
               ) : (
@@ -352,7 +330,7 @@ const CreatorOnboarding = () => {
 
               <div className="bg-muted/50 rounded-xl p-4">
                 <p className="text-xs text-muted-foreground">
-                  💡 This is a <strong>demo verification</strong>. In production, this would connect to Instagram OAuth to verify your account ownership and fetch real metrics.
+                  💡 You’ll approve Orange in Instagram, then return here with your real connected account.
                 </p>
               </div>
 

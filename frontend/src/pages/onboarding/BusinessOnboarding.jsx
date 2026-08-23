@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
@@ -161,20 +161,22 @@ const BusinessOnboarding = () => {
     }));
   };
 
-  // Instagram verification
-  const verifyInstagram = async () => {
-    if (!formData.instagramHandle) {
-      toast.error("Enter your Instagram handle first");
-      return;
-    }
+  useEffect(() => {
+    instagramAPI.status().then(({ data }) => {
+      if (!data.connected) return;
+      updateField('instagramHandle', data.instagramUsername ? `@${data.instagramUsername.replace('@', '')}` : '');
+      updateField('instagramUrl', data.instagramUsername ? `https://instagram.com/${data.instagramUsername.replace('@', '')}` : '');
+      setInstagramVerified(true);
+    }).catch(() => {});
+  }, []);
+
+  const connectInstagram = async () => {
     setVerifyingInstagram(true);
     try {
-      await instagramAPI.verify(formData.instagramHandle);
-      setInstagramVerified(true);
-      toast.success("Instagram verified! ✓");
+      const { data } = await instagramAPI.connect();
+      window.location.assign(data.authorizationUrl);
     } catch (error) {
-      toast.error("Verification failed. Try again.");
-    } finally {
+      toast.error(getErrorMessage(error, 'Instagram connection is not configured yet.'));
       setVerifyingInstagram(false);
     }
   };
@@ -318,37 +320,31 @@ const BusinessOnboarding = () => {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Handle *</Label>
+                <Label htmlFor="instagram">Instagram Account *</Label>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="instagram"
-                    placeholder="@yourbrand"
+                    placeholder="Connect your Instagram account"
                     value={formData.instagramHandle}
-                    onChange={(e) => {
-                      const handle = e.target.value;
-                      updateField('instagramHandle', handle);
-                      updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
-                      setInstagramVerified(false);
-                    }}
                     className="input-orange pl-10"
                     data-testid="business-instagram-input"
-                    disabled={instagramVerified}
+                    disabled
                   />
                 </div>
               </div>
 
               {!instagramVerified ? (
                 <Button
-                  onClick={verifyInstagram}
-                  disabled={verifyingInstagram || !formData.instagramHandle}
+                  onClick={connectInstagram}
+                  disabled={verifyingInstagram}
                   className="w-full btn-primary"
                   data-testid="verify-instagram-btn"
                 >
                   {verifyingInstagram ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Connecting...</>
                   ) : (
-                    <><Instagram className="w-4 h-4 mr-2" /> Verify Instagram (Demo)</>
+                    <><Instagram className="w-4 h-4 mr-2" /> Connect Instagram</>
                   )}
                 </Button>
               ) : (
@@ -367,7 +363,7 @@ const BusinessOnboarding = () => {
 
               <div className="bg-muted/50 rounded-xl p-4">
                 <p className="text-xs text-muted-foreground">
-                  💡 This is a <strong>demo verification</strong>. In production, this would connect to Instagram OAuth.
+                  💡 You’ll approve Orange in Instagram, then return here with your connected account.
                 </p>
               </div>
 
