@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -11,6 +12,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Literal
 import uuid
+import secrets
+import requests
+from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -37,6 +41,15 @@ BARTER_FEE_PERCENT = 10  # 10% of declared product/service value for barter
 CREATOR_SUBSCRIPTION_FEE = 5000  # ₹50/month in paise (MOCKED for MVP)
 AUTO_APPROVE_DAYS = 7  # Auto-approve content after 7 days
 REQUEST_EXPIRY_HOURS = 72
+
+# Instagram OAuth configuration. These values must be supplied in backend/.env.
+INSTAGRAM_APP_ID = os.environ.get("INSTAGRAM_APP_ID", "")
+INSTAGRAM_APP_SECRET = os.environ.get("INSTAGRAM_APP_SECRET", "")
+INSTAGRAM_REDIRECT_URI = os.environ.get(
+    "INSTAGRAM_REDIRECT_URI", "http://localhost:8000/api/auth/instagram/callback"
+)
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+INSTAGRAM_SCOPES = "instagram_business_basic"
 
 # Collaboration States
 COLLAB_STATES = [
@@ -293,6 +306,16 @@ class InstagramVerifyResponse(BaseModel):
     engagementRate: float
     message: str
 
+class InstagramStatusResponse(BaseModel):
+    connected: bool
+    instagramUserId: Optional[str] = None
+    instagramUsername: Optional[str] = None
+    followersCount: Optional[int] = None
+    engagementRate: Optional[float] = None
+
+class InstagramOAuthStartResponse(BaseModel):
+    authorizationUrl: str
+
 # ============== HELPER FUNCTIONS ==============
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -338,6 +361,65 @@ def check_blocked_content(message: str) -> bool:
 def generate_simulated_engagement_rate() -> float:
     """Generate a realistic engagement rate between 2% and 12%"""
     return round(random.uniform(2.0, 12.0), 2)
+
+# Build the Instagram authorization URL for the currently authenticated Orange user.
+def build_instagram_authorization_url(state: str) -> str:
+    params = {
+        "client_id": INSTAGRAM_APP_ID,
+        "redirect_uri": INSTAGRAM_REDIRECT_URI,
+        "response_type": "code",
+        "scope": INSTAGRAM_SCOPES,
+        "state": state,
+    }
+    return f"https://www.instagram.com/oauth/authorize?{urlencode(params)}"
+
+# Exchange Instagram's authorization code and return the connected account details.
+def exchange_instagram_code(code: str) -> dict:
+    response = requests.post(
+        "https://api.instagram.com/oauth/access_token",
+        data={
+            "client_id": INSTAGRAM_APP_ID,
+            "client_secret": INSTAGRAM_APP_SECRET,
+            "grant_type": "authorization_code",
+            "redirect_uri": INSTAGRAM_REDIRECT_URI,
+            "code": code,
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    short_lived = response.json()
+
+    long_lived_response = requests.get(
+        "https://graph.instagram.com/access_token",
+        params={
+            "grant_type": "ig_exchange_token",
+            "client_secret": INSTAGRAM_APP_SECRET,
+            "access_token": short_lived["access_token"],
+        },
+        timeout=15,
+    )
+    long_lived_response.raise_for_status()
+    long_lived = long_lived_response.json()
+    access_token = long_lived.get("access_token", short_lived["access_token"])
+
+    profile_response = requests.get(
+        "https://graph.instagram.com/me",
+        params={
+            "fields": "user_id,username,account_type,media_count",
+            "access_token": access_token,
+        },
+        timeout=15,
+    )
+    profile_response.raise_for_status()
+    profile = profile_response.json()
+    return {
+        "accessToken": access_token,
+        "expiresIn": long_lived.get("expires_in"),
+        "instagramUserId": profile.get("user_id") or profile.get("id"),
+        "instagramUsername": profile.get("username"),
+        "accountType": profile.get("account_type"),
+        "mediaCount": profile.get("media_count"),
+    }
 
 # ============== AUTH ENDPOINTS ==============
 
@@ -420,59 +502,124 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 async def logout():
     return {"message": "Logged out successfully", "success": True}
 
-# ============== INSTAGRAM VERIFICATION (SIMULATED) ==============
+# ============== INSTAGRAM OAUTH ==============
+
+# purpose: Start the Instagram OAuth flow for the logged-in Orange user.
+# req: { authenticated Orange bearer token }
+# res: { authorizationUrl }
+@auth_router.get("/instagram/connect", response_model=InstagramOAuthStartResponse)
+async def connect_instagram(current_user: dict = Depends(get_current_user)):
+    if not INSTAGRAM_APP_ID or not INSTAGRAM_APP_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Instagram OAuth is not configured. Add INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET to backend/.env.",
+        )
+
+    state = secrets.token_urlsafe(32)
+    await db.users.update_one(
+        {"id": current_user["id"]},
+        {
+            "$set": {
+                "instagramOAuthState": state,
+                "instagramOAuthStateExpiresAt": datetime.now(timezone.utc) + timedelta(minutes=10),
+            }
+        },
+    )
+    return InstagramOAuthStartResponse(authorizationUrl=build_instagram_authorization_url(state))
+
+# purpose: Complete Instagram OAuth, persist the connected account, and return the user to onboarding.
+# req: { code, state, error, error_reason }
+# res: { browser redirect to the local Orange frontend }
+@auth_router.get("/instagram/callback")
+async def instagram_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_reason: Optional[str] = None,
+):
+    if error or not code or not state:
+        reason = error_reason or error or "Instagram authorization was cancelled"
+        return RedirectResponse(f"{FRONTEND_URL}/instagram/callback?instagram=error&{urlencode({'reason': reason})}")
+
+    user = await db.users.find_one(
+        {
+            "instagramOAuthState": state,
+            "instagramOAuthStateExpiresAt": {"$gt": datetime.now(timezone.utc)},
+        },
+        {"_id": 0},
+    )
+    if not user:
+        return RedirectResponse(f"{FRONTEND_URL}/instagram/callback?instagram=error&reason=Invalid+or+expired+OAuth+state")
+
+    try:
+        instagram = exchange_instagram_code(code)
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        logger.warning("Instagram OAuth exchange failed: %s", exc)
+        return RedirectResponse(f"{FRONTEND_URL}/instagram/callback?instagram=error&reason=Instagram+authorization+failed")
+
+    connected_at = datetime.now(timezone.utc)
+    expires_at = None
+    if instagram.get("expiresIn"):
+        expires_at = connected_at + timedelta(seconds=int(instagram["expiresIn"]))
+
+    instagram_fields = {
+        "instagramVerified": True,
+        "instagramUserId": instagram["instagramUserId"],
+        "instagramUsername": instagram.get("instagramUsername"),
+        "instagramAccessToken": instagram["accessToken"],
+        "instagramTokenExpiresAt": expires_at,
+        "instagramConnectedAt": connected_at,
+        "instagramAccountType": instagram.get("accountType"),
+        "instagramOAuthState": None,
+        "instagramOAuthStateExpiresAt": None,
+    }
+    await db.users.update_one({"id": user["id"]}, {"$set": instagram_fields})
+    collection = "creator_profiles" if user["role"] == "creator" else "brand_profiles"
+    await db[collection].update_one({"userId": user["id"]}, {"$set": instagram_fields})
+    return RedirectResponse(f"{FRONTEND_URL}/instagram/callback?instagram=connected")
+
+# purpose: Return the current user's Instagram connection status without exposing the access token.
+# req: { authenticated Orange bearer token }
+# res: { connected, instagramUserId, instagramUsername, followersCount, engagementRate }
+@auth_router.get("/instagram/status", response_model=InstagramStatusResponse)
+async def instagram_status(current_user: dict = Depends(get_current_user)):
+    return InstagramStatusResponse(
+        connected=bool(current_user.get("instagramVerified")),
+        instagramUserId=current_user.get("instagramUserId"),
+        instagramUsername=current_user.get("instagramUsername"),
+        followersCount=current_user.get("followersCount"),
+        engagementRate=current_user.get("engagementRate"),
+    )
+
+# purpose: Disconnect the current user's Instagram account and remove its stored token.
+# req: { authenticated Orange bearer token }
+# res: { success }
+@auth_router.post("/instagram/disconnect")
+async def disconnect_instagram(current_user: dict = Depends(get_current_user)):
+    instagram_fields = {
+        "instagramVerified": False,
+        "instagramUserId": None,
+        "instagramUsername": None,
+        "instagramAccessToken": None,
+        "instagramTokenExpiresAt": None,
+        "instagramConnectedAt": None,
+        "instagramAccountType": None,
+    }
+    await db.users.update_one({"id": current_user["id"]}, {"$set": instagram_fields})
+    collection = "creator_profiles" if current_user["role"] == "creator" else "brand_profiles"
+    await db[collection].update_one({"userId": current_user["id"]}, {"$set": instagram_fields})
+    return {"success": True}
+
+# ============== INSTAGRAM VERIFICATION (LEGACY) ==============
 
 @auth_router.post("/instagram/verify", response_model=InstagramVerifyResponse)
 async def verify_instagram(
     request: InstagramVerifyRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    DUMMY Instagram verification for MVP.
-    In production, this would use Instagram OAuth.
-    For now, it just accepts any username and generates fake metrics.
-    """
-    username = request.instagramUsername.replace("@", "").strip()
-    
-    if not username:
-        raise HTTPException(status_code=400, detail="Instagram username is required")
-    
-    # Generate simulated/dummy data
-    import random
-    simulated_user_id = f"ig_{uuid.uuid4().hex[:12]}"
-    engagement_rate = round(random.uniform(2.0, 12.0), 1)  # Random ER between 2-12%
-    followers_count = random.randint(5000, 500000)  # Random followers between 5K-500K
-    
-    # Update user record
-    await db.users.update_one(
-        {"id": current_user["id"]},
-        {"$set": {
-            "instagramVerified": True,
-            "instagramUserId": simulated_user_id,
-            "instagramUsername": f"@{username}",
-            "engagementRate": engagement_rate,
-            "followersCount": followers_count
-        }}
-    )
-    
-    # Update profile if exists
-    collection = "creator_profiles" if current_user["role"] == "creator" else "brand_profiles"
-    await db[collection].update_one(
-        {"userId": current_user["id"]},
-        {"$set": {
-            "instagramVerified": True,
-            "instagramUserId": simulated_user_id,
-            "instagramUsername": f"@{username}",
-            "engagementRate": engagement_rate
-        }}
-    )
-    
-    return InstagramVerifyResponse(
-        success=True,
-        instagramUserId=simulated_user_id,
-        followersCount=followers_count,
-        engagementRate=engagement_rate,
-        message=f"Instagram @{username} verified! (Demo Mode - Simulated data)"
+    raise HTTPException(
+        status_code=410,
+        detail="Demo Instagram verification has been removed. Use GET /api/auth/instagram/connect.",
     )
 
 # ============== CREATOR PROFILE ENDPOINTS ==============
