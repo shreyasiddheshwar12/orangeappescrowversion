@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
@@ -161,22 +161,20 @@ const BusinessOnboarding = () => {
     }));
   };
 
-  useEffect(() => {
-    instagramAPI.status().then(({ data }) => {
-      if (!data.connected) return;
-      updateField('instagramHandle', data.instagramUsername ? `@${data.instagramUsername.replace('@', '')}` : '');
-      updateField('instagramUrl', data.instagramUsername ? `https://instagram.com/${data.instagramUsername.replace('@', '')}` : '');
-      setInstagramVerified(true);
-    }).catch(() => {});
-  }, []);
-
-  const connectInstagram = async () => {
+  // Instagram verification
+  const verifyInstagram = async () => {
+    if (!formData.instagramHandle) {
+      toast.error("Enter your Instagram handle first");
+      return;
+    }
     setVerifyingInstagram(true);
     try {
-      const { data } = await instagramAPI.connect();
-      window.location.assign(data.authorizationUrl);
+      await instagramAPI.verify(formData.instagramHandle);
+      setInstagramVerified(true);
+      toast.success("Instagram verified! ✓");
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Instagram connection is not configured yet.'));
+      toast.error("Verification failed. Try again.");
+    } finally {
       setVerifyingInstagram(false);
     }
   };
@@ -320,31 +318,37 @@ const BusinessOnboarding = () => {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Account *</Label>
+                <Label htmlFor="instagram">Instagram Handle *</Label>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="instagram"
-                    placeholder="Connect your Instagram account"
+                    placeholder="@yourbrand"
                     value={formData.instagramHandle}
+                    onChange={(e) => {
+                      const handle = e.target.value;
+                      updateField('instagramHandle', handle);
+                      updateField('instagramUrl', handle ? `https://instagram.com/${handle.replace('@', '')}` : '');
+                      setInstagramVerified(false);
+                    }}
                     className="input-orange pl-10"
                     data-testid="business-instagram-input"
-                    disabled
+                    disabled={instagramVerified}
                   />
                 </div>
               </div>
 
               {!instagramVerified ? (
                 <Button
-                  onClick={connectInstagram}
-                  disabled={verifyingInstagram}
+                  onClick={verifyInstagram}
+                  disabled={verifyingInstagram || !formData.instagramHandle}
                   className="w-full btn-primary"
                   data-testid="verify-instagram-btn"
                 >
                   {verifyingInstagram ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Connecting...</>
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Verifying...</>
                   ) : (
-                    <><Instagram className="w-4 h-4 mr-2" /> Connect Instagram</>
+                    <><Instagram className="w-4 h-4 mr-2" /> Verify Instagram (Demo)</>
                   )}
                 </Button>
               ) : (
@@ -363,7 +367,7 @@ const BusinessOnboarding = () => {
 
               <div className="bg-muted/50 rounded-xl p-4">
                 <p className="text-xs text-muted-foreground">
-                  💡 You’ll approve Orange in Instagram, then return here with your connected account.
+                  💡 This is a <strong>demo verification</strong>. In production, this would connect to Instagram OAuth.
                 </p>
               </div>
 
