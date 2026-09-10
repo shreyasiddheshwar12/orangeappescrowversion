@@ -22,7 +22,7 @@ jobs:
       - name: Compile backend
         run: python -m py_compile server.py e2e_patch.py sitecustomize.py
       - name: Run backend smoke tests
-        run: pytest -q test_api_smoke.py test_e2e_hardening.py
+        run: python -m pytest -q test_api_smoke.py test_e2e_hardening.py
 
   frontend:
     runs-on: ubuntu-latest
