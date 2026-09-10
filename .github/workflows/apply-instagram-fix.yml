@@ -1,0 +1,34 @@
+name: Apply Instagram OAuth fix
+
+on:
+  push:
+    branches:
+      - fix/e2e-instagram-razorpay-marketplace-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "!startsWith(github.event.head_commit.message, 'fix: apply Instagram OAuth routes')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/e2e-instagram-razorpay-marketplace-v2
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python scripts/patch_instagram_routes.py
+      - name: Validate Python syntax
+        run: python -m py_compile backend/server.py
+      - name: Commit patched backend
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend/server.py
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: apply Instagram OAuth routes'
+          git push origin fix/e2e-instagram-razorpay-marketplace-v2
