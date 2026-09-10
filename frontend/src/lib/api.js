@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 const API_URL = `${BACKEND_URL}/api`;
 
 export const getErrorMessage = (error, defaultMessage = 'Something went wrong') => {
@@ -109,7 +109,15 @@ export const instagramAPI = {
   status: () => api.get('/auth/instagram/status'),
   disconnect: () => api.post('/auth/instagram/disconnect'),
 };
-export const uploadAPI = { uploadFile: async () => ({ data: { url: '' } }) };
+export const uploadAPI = {
+  uploadFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/uploads', formData, {
+      headers: { 'Content-Type': undefined },
+    });
+  },
+};
 export const creatorAPI = {
   createProfile: (data) => api.post('/creator/profile', data),
   getProfile: () => api.get('/creator/profile'),
@@ -145,7 +153,6 @@ export const campaignAPI = {
   getOutgoing: () => api.get('/campaigns/outgoing'),
   getById: (id) => api.get(`/campaigns/${id}`),
   respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
-  // Creates the order, launches Razorpay Checkout, and resolves only after server-side verification.
   pay: (id) => openRazorpayPayment(id),
   createPaymentOrder: (id) => api.post(`/payments/campaigns/${id}/order`),
   verifyPayment: (id, data) => api.post(`/payments/campaigns/${id}/verify`, data),
