@@ -9,7 +9,9 @@ os.environ.setdefault("SEED_ENABLED", "false")
 
 from fastapi.testclient import TestClient
 
-import server
+import app as orange_app
+
+server = orange_app.server
 
 
 def route_exists(path, method):
