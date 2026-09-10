@@ -28,6 +28,75 @@ api.interceptors.response.use((response) => response, (error) => {
   return Promise.reject(error);
 });
 
+const loadRazorpayCheckout = () => new Promise((resolve, reject) => {
+  if (typeof window === 'undefined') return reject(new Error('Payment checkout is only available in a browser.'));
+  if (window.Razorpay) return resolve(window.Razorpay);
+  const existing = document.querySelector('script[data-razorpay-checkout]');
+  if (existing) {
+    existing.addEventListener('load', () => resolve(window.Razorpay));
+    existing.addEventListener('error', () => reject(new Error('Unable to load Razorpay Checkout.')));
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+  script.async = true;
+  script.dataset.razorpayCheckout = 'true';
+  script.onload = () => window.Razorpay ? resolve(window.Razorpay) : reject(new Error('Razorpay Checkout loaded incorrectly.'));
+  script.onerror = () => reject(new Error('Unable to load Razorpay Checkout.'));
+  document.body.appendChild(script);
+});
+
+const openRazorpayPayment = async (campaignId) => {
+  const orderResponse = await api.post(`/payments/campaigns/${campaignId}/order`);
+  const order = orderResponse.data;
+  const Razorpay = await loadRazorpayCheckout();
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error instanceof Error ? error : new Error(String(error || 'Payment failed')));
+    };
+    const options = {
+      key: order.keyId,
+      amount: order.amount,
+      currency: order.currency || 'INR',
+      name: order.name || 'Orange',
+      description: order.description || 'Orange marketplace protected payment',
+      order_id: order.orderId,
+      prefill: order.prefill || {},
+      notes: { campaign_id: campaignId },
+      theme: { color: '#f97316' },
+      handler: async (response) => {
+        try {
+          const verified = await api.post(`/payments/campaigns/${campaignId}/verify`, {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          if (settled) return;
+          settled = true;
+          resolve(verified);
+        } catch (error) {
+          fail(error);
+        }
+      },
+      modal: {
+        ondismiss: () => fail(new Error('Payment cancelled')),
+        confirm_close: true,
+      },
+    };
+
+    const razorpay = new Razorpay(options);
+    razorpay.on('payment.failed', (response) => {
+      const reason = response?.error?.description || response?.error?.reason || 'Payment failed';
+      fail(new Error(reason));
+    });
+    razorpay.open();
+  });
+};
+
 export const authAPI = {
   signup: (data) => api.post('/auth/signup', data),
   login: (data) => api.post('/auth/login', data),
@@ -76,8 +145,9 @@ export const campaignAPI = {
   getOutgoing: () => api.get('/campaigns/outgoing'),
   getById: (id) => api.get(`/campaigns/${id}`),
   respond: (id, action) => api.patch(`/campaigns/${id}/respond?action=${action}`),
-  // Creates a real Razorpay Order. The frontend must launch Checkout and then call verifyPayment.
-  pay: (id) => api.post(`/payments/campaigns/${id}/order`),
+  // Creates the order, launches Razorpay Checkout, and resolves only after server-side verification.
+  pay: (id) => openRazorpayPayment(id),
+  createPaymentOrder: (id) => api.post(`/payments/campaigns/${id}/order`),
   verifyPayment: (id, data) => api.post(`/payments/campaigns/${id}/verify`, data),
   addShipping: (id, details) => api.post(`/campaigns/${id}/shipping?shippingDetails=${encodeURIComponent(details)}`),
   confirmReceipt: (id) => api.post(`/campaigns/${id}/product-received`),
@@ -98,7 +168,7 @@ export const adminAPI = {
 };
 export const seedAPI = { seed: () => api.post('/seed') };
 export const paymentsAPI = {
-  createOrder: (campaignId) => campaignAPI.pay(campaignId),
+  createOrder: (campaignId) => campaignAPI.createPaymentOrder(campaignId),
   verifyPayment: (campaignId, data) => campaignAPI.verifyPayment(campaignId, data),
 };
 export const requestsAPI = { respond: (id, action) => campaignAPI.respond(id, action) };
