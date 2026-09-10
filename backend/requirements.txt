@@ -20,7 +20,6 @@ idna==3.11
 iniconfig==2.3.0
 isort==7.0.0
 jmespath==1.0.1
-jq==1.10.0
 librt==0.7.3
 markdown-it-py==4.0.0
 mccabe==0.7.0
@@ -34,7 +33,7 @@ packaging==25.0
 pandas==2.3.3
 passlib==1.7.4
 pathspec==0.12.1
-platformdirs==4.5.1
+platformdirs==4.5.0
 pluggy==1.6.0
 pyasn1==0.6.1
 pycodestyle==2.14.0
