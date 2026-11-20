@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { LogoMark } from '../components/orange/Logo';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth';
@@ -23,7 +24,7 @@ const Login = () => {
 
     try {
       const user = await login(email, password);
-      toast.success("Welcome back! 🍊");
+      toast.success("Welcome back!");
       
       // Redirect based on role and onboarding status
       if (!user.hasCompletedOnboarding) {
@@ -64,11 +65,9 @@ const Login = () => {
         {/* Login Card */}
         <div className="card-orange p-8">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🍊</span>
-            </div>
-            <h1 className="font-heading text-3xl font-bold mb-2">Welcome back!</h1>
-            <p className="text-muted-foreground">Log in to your Orange account</p>
+            <LogoMark size={44} className="mx-auto mb-5" />
+            <h1 className="display text-3xl mb-2">Welcome back</h1>
+            <p className="text-muted-foreground">Log in to your Orange workspace</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -121,7 +120,7 @@ const Login = () => {
                   Logging in...
                 </>
               ) : (
-                'Log in 🍊'
+                'Log in'
               )}
             </Button>
           </form>
@@ -135,8 +134,9 @@ const Login = () => {
             </p>
           </div>
 
-          {/* Demo Accounts */}
-          <div className="mt-8 pt-6 border-t border-orange-100">
+          {/* Demo accounts: only shown when REACT_APP_SHOW_DEMO_ACCOUNTS=true */}
+          {process.env.REACT_APP_SHOW_DEMO_ACCOUNTS === 'true' && (
+          <div className="mt-8 pt-6 border-t border-border">
             <p className="text-sm text-muted-foreground text-center mb-4">
               Try demo accounts:
             </p>
@@ -148,11 +148,12 @@ const Login = () => {
               </div>
               <div className="bg-muted/50 p-3 rounded-xl">
                 <p className="font-semibold text-foreground">Brand</p>
-                <p className="text-muted-foreground">business1@orange.com</p>
+                <p className="text-muted-foreground">brand1@orange.com</p>
                 <p className="text-muted-foreground">password123</p>
               </div>
             </div>
           </div>
+          )}
         </div>
       </motion.div>
     </div>

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './lib/auth';
+import { LogoMark } from './components/orange/Logo';
 
 // Pages
 import Landing from './pages/Landing';
@@ -23,13 +24,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen gradient-hero flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <span className="text-3xl">🍊</span>
-          </div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center" aria-busy="true">
+        <LogoMark size={40} className="animate-pulse" />
       </div>
     );
   }
@@ -51,13 +47,8 @@ const PublicRoute = ({ children }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen gradient-hero flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <span className="text-3xl">🍊</span>
-          </div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center" aria-busy="true">
+        <LogoMark size={40} className="animate-pulse" />
       </div>
     );
   }
@@ -169,8 +160,9 @@ function App() {
           toastOptions={{
             style: {
               background: '#fff',
-              border: '1px solid #FFD8C2',
-              borderRadius: '1rem',
+              border: '1px solid #E9E2D9',
+              borderRadius: '10px',
+              color: '#242323',
             },
           }}
         />

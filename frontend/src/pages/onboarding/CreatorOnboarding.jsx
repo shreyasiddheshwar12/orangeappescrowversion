@@ -187,7 +187,7 @@ const CreatorOnboarding = () => {
 
       await creatorAPI.createProfile(profileData);
       updateUser({ hasCompletedOnboarding: true });
-      toast.success("Profile created – you look extra juicy now! 🍊");
+      toast.success("Your profile is live");
       navigate('/dashboard/creator');
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to create profile"));
@@ -624,7 +624,7 @@ const CreatorOnboarding = () => {
                   </>
                 ) : (
                   <>
-                    Complete Profile 🍊
+                    Complete profile
                     <Check className="w-4 h-4 ml-2" />
                   </>
                 )}

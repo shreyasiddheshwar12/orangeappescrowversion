@@ -633,7 +633,7 @@ const BusinessOnboarding = () => {
                   </>
                 ) : (
                   <>
-                    Find Creators 🍊
+                    Finish setup
                     <Check className="w-4 h-4 ml-2" />
                   </>
                 )}
