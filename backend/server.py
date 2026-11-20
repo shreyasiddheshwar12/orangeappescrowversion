@@ -92,7 +92,7 @@ class PublicBrandProfile(BaseModel):
 class CampaignCreate(BaseModel):
     receiverId:str; receiverType:Literal['creator','brand']; campaignType:Literal['paid','barter_product','barter_service']; deliverables:str; budget:Optional[float]=0; productValue:Optional[float]=0; timeline:Optional[str]=''; brief:Optional[str]=''; barterDetails:Optional[str]=''
 class CampaignResponse(BaseModel):
-    id:str; senderId:str; senderType:str; senderName:str; receiverId:str; receiverType:str; receiverName:str; campaignType:str; deliverables:str; budget:float; productValue:float; barterFee:float; timeline:str; brief:str; barterDetails:str; status:str; paymentStatus:str; escrowAmount:float; platformCommission:float; creatorPayout:float; identityUnlocked:bool; chatEnabled:bool; contentLink:Optional[str]=None; linkVerified:bool=False; shippingDetails:Optional[str]=None; productReceived:bool=False; senderInstagram:Optional[str]=None; receiverInstagram:Optional[str]=None; createdAt:str; updatedAt:str; expiresAt:Optional[str]=None; payoutStatus:Optional[str]=None
+    id:str; senderId:str; senderType:str; senderName:str; receiverId:str; receiverType:str; receiverName:str; campaignType:str; deliverables:str; budget:float; productValue:float; barterFee:float; timeline:str; brief:str; barterDetails:str; status:str; paymentStatus:str; escrowAmount:float; platformCommission:float; creatorPayout:float; identityUnlocked:bool; chatEnabled:bool; contentLink:Optional[str]=None; linkVerified:bool=False; shippingDetails:Optional[str]=None; productReceived:bool=False; senderInstagram:Optional[str]=None; receiverInstagram:Optional[str]=None; createdAt:str; updatedAt:str; expiresAt:Optional[str]=None; payoutStatus:Optional[str]=None; ratedByMe:bool=False; growthCampaignId:Optional[str]=None
 class Attachment(BaseModel): url:str; type:Literal['image','video','file']='file'; name:Optional[str]=None; size:Optional[int]=None
 class MessageCreate(BaseModel): content:str=''; attachments:Optional[List[Attachment]]=None
 class MessageResponse(BaseModel): id:str; campaignId:str; senderId:str; senderType:str; content:str; blocked:bool=False; flagged:bool=False; attachments:List[Attachment]=[]; createdAt:str
@@ -120,7 +120,7 @@ def measured_engagement(x:dict)->Optional[float]:
     return x.get('engagementRate') if x.get('engagementMeasured') and x.get('engagementRate') is not None else None
 def check_blocked_content(message:str)->bool: return any(re.search(p,message.lower(),re.I) for p in BLOCKED_PATTERNS)
 def mask_campaign_identity(c,current_user_id):
-    x={**c}
+    x={**c}; x['ratedByMe']=current_user_id in (c.get('ratedBy') or [])
     if not x.get('identityUnlocked',False):
         if x.get('senderUserId')!=current_user_id: x['senderName']='Brand' if x.get('senderType')=='business' else 'Creator'
         if x.get('receiverUserId')!=current_user_id: x['receiverName']='Creator' if x.get('receiverType')=='creator' else 'Brand'
@@ -585,7 +585,7 @@ async def rate(campaign_id:str,rating:int=Query(...,ge=1,le=5),feedback:str=Quer
     if c['status']!='completed': raise HTTPException(status_code=400,detail='Can only rate completed campaigns')
     ensure_party(c,current_user)
     if await db.ratings.find_one({'campaignId':campaign_id,'raterId':current_user['id']}): raise HTTPException(status_code=400,detail="You've already rated this campaign")
-    target=creator_user_id(c) if current_user['id']==brand_user_id(c) else brand_user_id(c); target_type='creator' if target==creator_user_id(c) else 'brand'; now=datetime.now(timezone.utc).isoformat(); await db.ratings.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'raterId':current_user['id'],'raterType':current_user['role'],'targetId':target,'targetType':target_type,'rating':rating,'feedback':feedback,'createdAt':now}); rs=await db.ratings.find({'targetId':target},{'_id':0}).to_list(1000); avg=sum(x['rating'] for x in rs)/len(rs); col='creator_profiles' if target_type=='creator' else 'brand_profiles'; await db[col].update_one({'userId':target},{'$set':{'rating':round(avg,2)}}); return {'success':True,'message':'Rating submitted!','rating':rating}
+    target=creator_user_id(c) if current_user['id']==brand_user_id(c) else brand_user_id(c); target_type='creator' if target==creator_user_id(c) else 'brand'; now=datetime.now(timezone.utc).isoformat(); await db.ratings.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'raterId':current_user['id'],'raterType':current_user['role'],'targetId':target,'targetType':target_type,'rating':rating,'feedback':feedback,'createdAt':now}); await db.campaigns.update_one({'id':campaign_id},{'$addToSet':{'ratedBy':current_user['id']}}); rs=await db.ratings.find({'targetId':target},{'_id':0}).to_list(1000); avg=sum(x['rating'] for x in rs)/len(rs); col='creator_profiles' if target_type=='creator' else 'brand_profiles'; await db[col].update_one({'userId':target},{'$set':{'rating':round(avg,2)}}); return {'success':True,'message':'Rating submitted!','rating':rating}
 @campaign_router.post('/{campaign_id}/report')
 async def report(campaign_id:str,reason:str=Query(...),current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});

@@ -12,6 +12,7 @@ import { Switch } from '../../components/ui/switch';
 import { marketplaceAPI, campaignAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
+import TrustScore from '../../components/orange/TrustScore';
 
 const formatPrice = (price) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
 const formatCount = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
@@ -136,6 +137,8 @@ const CreatorProfile = () => {
             </div>
           )}
         </section>
+
+        <TrustScore kind="creator" profileId={creator.id} />
 
         <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Followers" value={creator.followersCount ? formatCount(creator.followersCount) : 'Not shared'} icon={Users} />

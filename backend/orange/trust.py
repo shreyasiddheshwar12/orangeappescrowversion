@@ -63,9 +63,9 @@ async def creator_trust(db, user_id: str) -> dict:
     avg = sum(r["rating"] for r in rs) / len(rs) if rs else None
     factors = {
         "onTime": (_ratio(on_time, len(timed)), f"{on_time} of {len(timed)} delivered within {ON_TIME_DAYS} days of payment" if timed else "Not measured yet"),
-        "rating": ((avg - 1) / 4 if avg is not None else None, f"Average {avg:.1f}/5 from {len(rs)} reviews" if rs else "No reviews yet"),
+        "rating": ((avg - 1) / 4 if avg is not None else None, f"Average {avg:.1f}/5 from {len(rs)} review{'s' if len(rs) != 1 else ''}" if rs else "No reviews yet"),
         "completion": (_ratio(len(completed), len(started)), f"{len(completed)} of {len(started)} paid collaborations completed" if started else "No paid collaborations yet"),
-        "response": (_ratio(len(answered), len(incoming)), f"Answered {len(answered)} of {len(incoming)} requests" if incoming else "No requests yet"),
+        "response": (_ratio(len(answered), len(incoming)), f"Answered {len(answered)} of {len(incoming)} request{'s' if len(incoming) != 1 else ''}" if incoming else "No requests yet"),
         "repeat": (_ratio(repeat_brands, len(set(brands))) if brands else None, f"{repeat_brands} of {len(set(brands))} brands came back" if brands else "No brands yet"),
     }
     return _combine(factors, CREATOR_WEIGHTS, len(completed))
@@ -85,7 +85,7 @@ async def business_trust(db, user_id: str) -> dict:
     factors = {
         "payment": (_ratio(len(paid), len(accepted)), f"Paid {len(paid)} of {len(accepted)} accepted collaborations" if accepted else "No accepted collaborations yet"),
         "turnaround": (_ratio(quick, len(timed)), f"{quick} of {len(timed)} approved within {TURNAROUND_DAYS} days" if timed else "Not measured yet"),
-        "rating": ((avg - 1) / 4 if avg is not None else None, f"Average {avg:.1f}/5 from {len(rs)} creators" if rs else "No reviews yet"),
+        "rating": ((avg - 1) / 4 if avg is not None else None, f"Average {avg:.1f}/5 from {len(rs)} creator{'s' if len(rs) != 1 else ''}" if rs else "No reviews yet"),
         "completion": (_ratio(len(completed), len(started)), f"{len(completed)} of {len(started)} paid collaborations completed" if started else "No paid collaborations yet"),
     }
     return _combine(factors, BUSINESS_WEIGHTS, len(completed))
