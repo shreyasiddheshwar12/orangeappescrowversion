@@ -7,7 +7,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import re
-import random
 import hmac
 import hashlib
 from pathlib import Path
@@ -64,18 +63,29 @@ class UserLogin(BaseModel): email: EmailStr; password: str
 class UserResponse(BaseModel):
     id: str; email: str; role: str; hasCompletedOnboarding: bool=False; isAdmin: bool=False; instagramVerified: bool=False; isBlacklisted: bool=False
 class TokenResponse(BaseModel): access_token: str; token_type: str='bearer'; user: UserResponse
+class CreatorRates(BaseModel):
+    reelPrice:Optional[float]=None; storyPrice:Optional[float]=None; postPrice:Optional[float]=None; bundlePrice:Optional[float]=None; carouselPrice:Optional[float]=None
+class MediaItem(BaseModel):
+    id:Optional[str]=None; type:Optional[str]='image'; url:str; thumbnailUrl:Optional[str]=None
 class CreatorProfileCreate(BaseModel):
-    name:str; bio:Optional[str]=''; location:Optional[str]=''; niche:Optional[str]=''; language:Optional[str]='English'; contentType:Optional[str]=''; niches:Optional[List[str]]=[]; reelPrice:Optional[float]=0; storyPrice:Optional[float]=0; postPrice:Optional[float]=0; paidCollabsEnabled:Optional[bool]=True; barterEnabled:Optional[bool]=True; profilePhotoUrl:Optional[str]=''
+    # Onboarding sends prices nested under `rates`; older clients send them top-level. Both are accepted.
+    name:str; bio:Optional[str]=''; location:Optional[str]=''; niche:Optional[str]=''; language:Optional[str]='English'; contentType:Optional[str]=''; niches:Optional[List[str]]=[]; reelPrice:Optional[float]=None; storyPrice:Optional[float]=None; postPrice:Optional[float]=None; bundlePrice:Optional[float]=None; carouselPrice:Optional[float]=None; rates:Optional[CreatorRates]=None; followersCount:Optional[int]=None; mediaGallery:Optional[List[MediaItem]]=None; paidCollabsEnabled:Optional[bool]=True; barterEnabled:Optional[bool]=True; profilePhotoUrl:Optional[str]=''
 class CreatorProfileFull(BaseModel):
-    id:str; userId:str; name:str; bio:str; location:str; niche:str; language:str; contentType:str; niches:List[str]; reelPrice:float; storyPrice:float; postPrice:float; paidCollabsEnabled:bool; barterEnabled:bool; instagramVerified:bool; engagementRate:float; profilePhotoUrl:str; isBlacklisted:bool=False; isVisible:bool=True; subscriptionActive:bool=True; rating:Optional[float]=None; totalCollabs:int=0
+    id:str; userId:str; name:str; bio:str; location:str; niche:str; language:str; contentType:str; niches:List[str]; reelPrice:float; storyPrice:float; postPrice:float; bundlePrice:float=0; carouselPrice:float=0; paidCollabsEnabled:bool; barterEnabled:bool; instagramVerified:bool; instagramUsername:Optional[str]=None; engagementRate:Optional[float]=None; engagementMeasured:bool=False; followersCount:Optional[int]=None; mediaGallery:List[MediaItem]=[]; profilePhotoUrl:str; isBlacklisted:bool=False; isVisible:bool=True; subscriptionActive:bool=True; rating:Optional[float]=None; totalCollabs:int=0
+class PastCollaboration(BaseModel):
+    campaignName:Optional[str]=''; creatorHandle:Optional[str]=''; result:Optional[str]=''; link:Optional[str]=''
 class BrandProfileCreate(BaseModel):
-    brandName:str; industry:Optional[str]=''; bio:Optional[str]=''; location:Optional[str]=''; deliverables:Optional[str]=''; budgetRange:Optional[str]=''; barterEnabled:Optional[bool]=True; paidCollabsEnabled:Optional[bool]=True; brandRequirements:Optional[str]=''; profilePhotoUrl:Optional[str]=''
+    brandName:str; industry:Optional[str]=''; bio:Optional[str]=''; location:Optional[str]=''; deliverables:Optional[str]=''; budgetRange:Optional[str]=''; barterEnabled:Optional[bool]=None; isOpenToBarter:Optional[bool]=None; paidCollabsEnabled:Optional[bool]=True; brandRequirements:Optional[str]=''; profilePhotoUrl:Optional[str]=''; preferredNiches:Optional[List[str]]=None; pastCollaborations:Optional[List[PastCollaboration]]=None
 class BrandProfileFull(BaseModel):
-    id:str; userId:str; brandName:str; industry:str; bio:str; location:str; deliverables:str; budgetRange:str; barterEnabled:bool; paidCollabsEnabled:bool; brandRequirements:str; instagramVerified:bool; profilePhotoUrl:str
+    id:str; userId:str; brandName:str; industry:str; bio:str; location:str; deliverables:str; budgetRange:str; barterEnabled:bool; paidCollabsEnabled:bool; brandRequirements:str; instagramVerified:bool; instagramUsername:Optional[str]=None; profilePhotoUrl:str; preferredNiches:List[str]=[]; pastCollaborations:List[PastCollaboration]=[]; rating:Optional[float]=None
 class CreatorDiscovery(BaseModel):
-    id:str; niche:str; language:str; contentType:str; niches:List[str]; reelPrice:float; storyPrice:float; postPrice:float; engagementRate:float; paidCollabsEnabled:bool; barterEnabled:bool; location:str
+    id:str; niche:str; language:str; contentType:str; niches:List[str]; reelPrice:float; storyPrice:float; postPrice:float; engagementRate:Optional[float]=None; engagementMeasured:bool=False; followersCount:Optional[int]=None; rating:Optional[float]=None; totalCollabs:int=0; paidCollabsEnabled:bool; barterEnabled:bool; location:str
 class BrandDiscovery(BaseModel):
-    id:str; industry:str; location:str; deliverables:str; budgetRange:str; barterEnabled:bool; paidCollabsEnabled:bool; brandRequirements:str
+    id:str; industry:str; location:str; deliverables:str; budgetRange:str; barterEnabled:bool; paidCollabsEnabled:bool; brandRequirements:str; preferredNiches:List[str]=[]; rating:Optional[float]=None
+class PublicCreatorProfile(BaseModel):
+    id:str; name:str; identityUnlocked:bool; isOwner:bool=False; bio:str=''; location:str=''; niche:str=''; niches:List[str]=[]; language:str='English'; contentType:str=''; reelPrice:float=0; storyPrice:float=0; postPrice:float=0; bundlePrice:float=0; carouselPrice:float=0; paidCollabsEnabled:bool=True; barterEnabled:bool=True; instagramVerified:bool=False; instagramUsername:Optional[str]=None; profilePhotoUrl:Optional[str]=None; followersCount:Optional[int]=None; engagementRate:Optional[float]=None; engagementMeasured:bool=False; mediaGallery:List[MediaItem]=[]; rating:Optional[float]=None; totalCollabs:int=0; ratings:List[dict]=[]
+class PublicBrandProfile(BaseModel):
+    id:str; brandName:str; identityUnlocked:bool; isOwner:bool=False; industry:str=''; bio:str=''; location:str=''; deliverables:str=''; budgetRange:str=''; barterEnabled:bool=True; paidCollabsEnabled:bool=True; brandRequirements:str=''; preferredNiches:List[str]=[]; pastCollaborations:List[PastCollaboration]=[]; instagramVerified:bool=False; instagramUsername:Optional[str]=None; profilePhotoUrl:Optional[str]=None; rating:Optional[float]=None; completedCollabs:int=0; ratings:List[dict]=[]
 class CampaignCreate(BaseModel):
     receiverId:str; receiverType:Literal['creator','brand']; campaignType:Literal['paid','barter_product','barter_service']; deliverables:str; budget:Optional[float]=0; productValue:Optional[float]=0; timeline:Optional[str]=''; brief:Optional[str]=''; barterDetails:Optional[str]=''
 class CampaignResponse(BaseModel):
@@ -101,8 +111,10 @@ async def get_current_user(credentials:HTTPAuthorizationCredentials=Depends(secu
         if user.get('isBlacklisted',False): raise HTTPException(status_code=403,detail='Your account has been blacklisted')
         return user
     except JWTError: raise HTTPException(status_code=401,detail='Invalid token')
+def measured_engagement(x:dict)->Optional[float]:
+    # Only report engagement that came from a real measurement. Older records may hold a randomly generated value.
+    return x.get('engagementRate') if x.get('engagementMeasured') and x.get('engagementRate') is not None else None
 def check_blocked_content(message:str)->bool: return any(re.search(p,message.lower(),re.I) for p in BLOCKED_PATTERNS)
-def engagement()->float: return round(random.uniform(2,12),2)
 def razorpay_configured()->bool: return bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 def razorpay_request(method:str,path:str,**kwargs):
     if not razorpay_configured(): raise HTTPException(status_code=503,detail='Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.')
@@ -311,7 +323,13 @@ async def verify_instagram_legacy(current_user=Depends(get_current_user)):
 async def create_creator_profile(profile:CreatorProfileCreate,current_user=Depends(get_current_user)):
     if current_user['role']!='creator': raise HTTPException(status_code=403,detail='Only creators can create creator profiles')
     existing=await db.creator_profiles.find_one({'userId':current_user['id']}); now=datetime.now(timezone.utc).isoformat(); pid=existing['id'] if existing else str(uuid.uuid4())
-    doc={'id':pid,'userId':current_user['id'],'name':profile.name,'bio':profile.bio or '','location':profile.location or '','niche':profile.niche or (profile.niches[0] if profile.niches else ''),'language':profile.language or 'English','contentType':profile.contentType or '','niches':profile.niches or [],'reelPrice':profile.reelPrice or 0,'storyPrice':profile.storyPrice or 0,'postPrice':profile.postPrice or 0,'paidCollabsEnabled':profile.paidCollabsEnabled if profile.paidCollabsEnabled is not None else True,'barterEnabled':profile.barterEnabled if profile.barterEnabled is not None else True,'instagramVerified':current_user.get('instagramVerified',False),'instagramUserId':current_user.get('instagramUserId'),'instagramUsername':current_user.get('instagramUsername'),'engagementRate':current_user.get('engagementRate',engagement()),'profilePhotoUrl':profile.profilePhotoUrl or '','isBlacklisted':False,'isVisible':existing.get('isVisible',True) if existing else True,'subscriptionActive':existing.get('subscriptionActive',True) if existing else True,'rating':existing.get('rating') if existing else None,'totalCollabs':existing.get('totalCollabs',0) if existing else 0,'createdAt':existing.get('createdAt',now) if existing else now,'updatedAt':now}
+    def price(field):
+        nested=getattr(profile.rates,field,None) if profile.rates else None
+        top=getattr(profile,field,None)
+        value=nested if nested is not None else top
+        if value is None: value=existing.get(field,0) if existing else 0
+        return max(float(value or 0),0.0)
+    doc={'id':pid,'userId':current_user['id'],'name':profile.name,'bio':profile.bio or '','location':profile.location or '','niche':profile.niche or (profile.niches[0] if profile.niches else ''),'language':profile.language or 'English','contentType':profile.contentType or '','niches':profile.niches or [],'reelPrice':price('reelPrice'),'storyPrice':price('storyPrice'),'postPrice':price('postPrice'),'paidCollabsEnabled':profile.paidCollabsEnabled if profile.paidCollabsEnabled is not None else True,'barterEnabled':profile.barterEnabled if profile.barterEnabled is not None else True,'instagramVerified':current_user.get('instagramVerified',False),'instagramUserId':current_user.get('instagramUserId'),'instagramUsername':current_user.get('instagramUsername'),'engagementRate':(current_user.get('engagementRate') or None) if current_user.get('engagementMeasured') else None,'engagementMeasured':bool(current_user.get('engagementMeasured')),'followersCount':current_user.get('followersCount') or profile.followersCount,'mediaGallery':[m.model_dump() for m in profile.mediaGallery] if profile.mediaGallery is not None else (existing.get('mediaGallery',[]) if existing else []),'bundlePrice':price('bundlePrice'),'carouselPrice':price('carouselPrice'),'profilePhotoUrl':profile.profilePhotoUrl or '','isBlacklisted':False,'isVisible':existing.get('isVisible',True) if existing else True,'subscriptionActive':existing.get('subscriptionActive',True) if existing else True,'rating':existing.get('rating') if existing else None,'totalCollabs':existing.get('totalCollabs',0) if existing else 0,'createdAt':existing.get('createdAt',now) if existing else now,'updatedAt':now}
     if existing: await db.creator_profiles.update_one({'id':pid},{'$set':doc})
     else: await db.creator_profiles.insert_one(doc)
     await db.users.update_one({'id':current_user['id']},{'$set':{'hasCompletedOnboarding':True}}); return CreatorProfileFull(**doc)
@@ -319,6 +337,7 @@ async def create_creator_profile(profile:CreatorProfileCreate,current_user=Depen
 async def get_creator_profile(current_user=Depends(get_current_user)):
     p=await db.creator_profiles.find_one({'userId':current_user['id']},{'_id':0});
     if not p: raise HTTPException(status_code=404,detail='Profile not found. Complete onboarding first.')
+    p['engagementRate']=measured_engagement(p); p['engagementMeasured']=p['engagementRate'] is not None
     return CreatorProfileFull(**p)
 @creator_router.post('/subscription/toggle')
 async def toggle_visibility(visible:bool=Query(...),current_user=Depends(get_current_user)):
@@ -328,7 +347,7 @@ async def toggle_visibility(visible:bool=Query(...),current_user=Depends(get_cur
 @business_router.post('/profile',response_model=BrandProfileFull)
 async def create_brand_profile(profile:BrandProfileCreate,current_user=Depends(get_current_user)):
     if current_user['role']!='business': raise HTTPException(status_code=403,detail='Only brands can create brand profiles')
-    existing=await db.brand_profiles.find_one({'userId':current_user['id']}); now=datetime.now(timezone.utc).isoformat(); pid=existing['id'] if existing else str(uuid.uuid4()); doc={'id':pid,'userId':current_user['id'],'brandName':profile.brandName,'industry':profile.industry or '','bio':profile.bio or '','location':profile.location or '','deliverables':profile.deliverables or '','budgetRange':profile.budgetRange or '','barterEnabled':profile.barterEnabled if profile.barterEnabled is not None else True,'paidCollabsEnabled':profile.paidCollabsEnabled if profile.paidCollabsEnabled is not None else True,'brandRequirements':profile.brandRequirements or '','instagramVerified':current_user.get('instagramVerified',False),'instagramUserId':current_user.get('instagramUserId'),'instagramUsername':current_user.get('instagramUsername'),'profilePhotoUrl':profile.profilePhotoUrl or '','createdAt':existing.get('createdAt',now) if existing else now,'updatedAt':now}
+    existing=await db.brand_profiles.find_one({'userId':current_user['id']}); now=datetime.now(timezone.utc).isoformat(); pid=existing['id'] if existing else str(uuid.uuid4()); doc={'id':pid,'userId':current_user['id'],'brandName':profile.brandName,'industry':profile.industry or '','bio':profile.bio or '','location':profile.location or '','deliverables':profile.deliverables or '','budgetRange':profile.budgetRange or '','barterEnabled':profile.barterEnabled if profile.barterEnabled is not None else (profile.isOpenToBarter if profile.isOpenToBarter is not None else True),'paidCollabsEnabled':profile.paidCollabsEnabled if profile.paidCollabsEnabled is not None else True,'brandRequirements':profile.brandRequirements or '','preferredNiches':profile.preferredNiches if profile.preferredNiches is not None else (existing.get('preferredNiches',[]) if existing else []),'pastCollaborations':[c.model_dump() for c in profile.pastCollaborations if c.campaignName] if profile.pastCollaborations is not None else (existing.get('pastCollaborations',[]) if existing else []),'rating':existing.get('rating') if existing else None,'instagramVerified':current_user.get('instagramVerified',False),'instagramUserId':current_user.get('instagramUserId'),'instagramUsername':current_user.get('instagramUsername'),'profilePhotoUrl':profile.profilePhotoUrl or '','createdAt':existing.get('createdAt',now) if existing else now,'updatedAt':now}
     if existing: await db.brand_profiles.update_one({'id':pid},{'$set':doc})
     else: await db.brand_profiles.insert_one(doc)
     await db.users.update_one({'id':current_user['id']},{'$set':{'hasCompletedOnboarding':True}}); return BrandProfileFull(**doc)
@@ -348,7 +367,29 @@ async def creators(niche:Optional[str]=None,language:Optional[str]=None,contentT
     items=await db.creator_profiles.find(q,{'_id':0}).to_list(100)
     if minPrice is not None: items=[x for x in items if x.get('reelPrice',0)>=minPrice]
     if maxPrice is not None: items=[x for x in items if x.get('reelPrice',0)<=maxPrice]
-    return [CreatorDiscovery(id=x['id'],niche=x.get('niche',''),language=x.get('language','English'),contentType=x.get('contentType',''),niches=x.get('niches',[]),reelPrice=x.get('reelPrice',0),storyPrice=x.get('storyPrice',0),postPrice=x.get('postPrice',0),engagementRate=x.get('engagementRate',0),paidCollabsEnabled=x.get('paidCollabsEnabled',True),barterEnabled=x.get('barterEnabled',True),location=x.get('location','')) for x in items]
+    return [CreatorDiscovery(id=x['id'],niche=x.get('niche',''),language=x.get('language','English'),contentType=x.get('contentType',''),niches=x.get('niches',[]),reelPrice=x.get('reelPrice',0),storyPrice=x.get('storyPrice',0),postPrice=x.get('postPrice',0),engagementRate=measured_engagement(x),engagementMeasured=measured_engagement(x) is not None,followersCount=x.get('followersCount') or None,rating=x.get('rating'),totalCollabs=x.get('totalCollabs',0),paidCollabsEnabled=x.get('paidCollabsEnabled',True),barterEnabled=x.get('barterEnabled',True),location=x.get('location','')) for x in items]
+async def identity_unlocked_between(viewer:dict,profile_user_id:str)->bool:
+    if viewer.get('isAdmin') or viewer['id']==profile_user_id: return True
+    return bool(await db.campaigns.find_one({'identityUnlocked':True,'$or':[{'senderUserId':viewer['id'],'receiverUserId':profile_user_id},{'senderUserId':profile_user_id,'receiverUserId':viewer['id']}]},{'_id':0,'id':1}))
+async def public_ratings(user_id:str)->list:
+    rs=await db.ratings.find({'targetId':user_id},{'_id':0}).sort('createdAt',-1).to_list(20)
+    return [{'rating':r['rating'],'feedback':r.get('feedback',''),'raterType':r.get('raterType'),'createdAt':r.get('createdAt')} for r in rs]
+@marketplace_router.get('/creators/{profile_id}',response_model=PublicCreatorProfile)
+async def creator_public_profile(profile_id:str,current_user=Depends(get_current_user)):
+    x=await db.creator_profiles.find_one({'id':profile_id},{'_id':0})
+    if not x or (x.get('isBlacklisted') and not current_user.get('isAdmin')): raise HTTPException(status_code=404,detail='Creator not found')
+    owner=x['userId']==current_user['id']
+    if not owner and not current_user.get('isAdmin') and (x.get('isVisible') is False or not x.get('instagramVerified')): raise HTTPException(status_code=404,detail='Creator not found')
+    unlocked=await identity_unlocked_between(current_user,x['userId'])
+    return PublicCreatorProfile(id=x['id'],name=x.get('name','') if unlocked else f"{x.get('niche') or 'Creator'} creator",identityUnlocked=unlocked,isOwner=owner,bio=x.get('bio',''),location=x.get('location',''),niche=x.get('niche',''),niches=x.get('niches',[]),language=x.get('language','English'),contentType=x.get('contentType',''),reelPrice=x.get('reelPrice',0),storyPrice=x.get('storyPrice',0),postPrice=x.get('postPrice',0),bundlePrice=x.get('bundlePrice',0),carouselPrice=x.get('carouselPrice',0),paidCollabsEnabled=x.get('paidCollabsEnabled',True),barterEnabled=x.get('barterEnabled',True),instagramVerified=bool(x.get('instagramVerified')),instagramUsername=x.get('instagramUsername') if unlocked else None,profilePhotoUrl=x.get('profilePhotoUrl') if unlocked else None,followersCount=x.get('followersCount') or None,engagementRate=measured_engagement(x),engagementMeasured=measured_engagement(x) is not None,mediaGallery=x.get('mediaGallery',[]),rating=x.get('rating'),totalCollabs=x.get('totalCollabs',0),ratings=await public_ratings(x['userId']))
+@marketplace_router.get('/brands/{profile_id}',response_model=PublicBrandProfile)
+async def brand_public_profile(profile_id:str,current_user=Depends(get_current_user)):
+    x=await db.brand_profiles.find_one({'id':profile_id},{'_id':0})
+    if not x: raise HTTPException(status_code=404,detail='Brand not found')
+    owner=x['userId']==current_user['id']
+    unlocked=await identity_unlocked_between(current_user,x['userId'])
+    completed=await db.campaigns.count_documents({'status':'completed','$or':[{'senderUserId':x['userId']},{'receiverUserId':x['userId']}]})
+    return PublicBrandProfile(id=x['id'],brandName=x.get('brandName','') if unlocked else f"{x.get('industry') or 'Local'} brand",identityUnlocked=unlocked,isOwner=owner,industry=x.get('industry',''),bio=x.get('bio',''),location=x.get('location',''),deliverables=x.get('deliverables',''),budgetRange=x.get('budgetRange',''),barterEnabled=x.get('barterEnabled',True),paidCollabsEnabled=x.get('paidCollabsEnabled',True),brandRequirements=x.get('brandRequirements',''),preferredNiches=x.get('preferredNiches',[]),pastCollaborations=x.get('pastCollaborations',[]) if unlocked else [],instagramVerified=bool(x.get('instagramVerified')),instagramUsername=x.get('instagramUsername') if unlocked else None,profilePhotoUrl=x.get('profilePhotoUrl') if unlocked else None,rating=x.get('rating'),completedCollabs=completed,ratings=await public_ratings(x['userId']))
 @marketplace_router.get('/brands',response_model=List[BrandDiscovery])
 async def brands(industry:Optional[str]=None,location:Optional[str]=None,barterOnly:Optional[bool]=None,current_user=Depends(get_current_user)):
     q={'instagramVerified':True};
@@ -356,7 +397,7 @@ async def brands(industry:Optional[str]=None,location:Optional[str]=None,barterO
     if location:q['location']={'$regex':location,'$options':'i'}
     if barterOnly:q['barterEnabled']=True
     items=await db.brand_profiles.find(q,{'_id':0}).to_list(100)
-    return [BrandDiscovery(id=x['id'],industry=x.get('industry',''),location=x.get('location',''),deliverables=x.get('deliverables',''),budgetRange=x.get('budgetRange',''),barterEnabled=x.get('barterEnabled',True),paidCollabsEnabled=x.get('paidCollabsEnabled',True),brandRequirements=x.get('brandRequirements','')) for x in items]
+    return [BrandDiscovery(id=x['id'],industry=x.get('industry',''),location=x.get('location',''),deliverables=x.get('deliverables',''),budgetRange=x.get('budgetRange',''),barterEnabled=x.get('barterEnabled',True),paidCollabsEnabled=x.get('paidCollabsEnabled',True),brandRequirements=x.get('brandRequirements',''),preferredNiches=x.get('preferredNiches',[]),rating=x.get('rating')) for x in items]
 
 @campaign_router.post('/',response_model=CampaignResponse,status_code=201)
 async def create_campaign(campaign:CampaignCreate,current_user=Depends(get_current_user)):
@@ -562,6 +603,13 @@ api_router.include_router(auth_router); api_router.include_router(creator_router
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware,allow_origins=CORS_ORIGINS,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 @app.on_event('startup')
-async def startup(): logger.info('Orange API started - live Razorpay payment flow enabled')
+async def startup():
+    try:
+        await db.users.create_index('email',unique=True); await db.users.create_index('id',unique=True)
+        for col in ('creator_profiles','brand_profiles'): await db[col].create_index('id',unique=True); await db[col].create_index('userId')
+        await db.campaigns.create_index('id',unique=True); await db.campaigns.create_index('senderUserId'); await db.campaigns.create_index('receiverUserId')
+        await db.messages.create_index([('campaignId',1),('createdAt',1)]); await db.ratings.create_index('targetId'); await db.payments.create_index('razorpayOrderId')
+    except Exception as exc: logger.warning('Index creation skipped: %s',exc)
+    logger.info('Orange API started')
 @app.on_event('shutdown')
 async def shutdown(): client.close()

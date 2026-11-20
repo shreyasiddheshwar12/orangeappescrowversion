@@ -1,21 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { 
-  Instagram, MapPin, Users, ArrowLeft, Send, DollarSign, 
-  ExternalLink, Loader2, Image as ImageIcon, Play, Lock, Unlock, CreditCard
-} from 'lucide-react';
+import { Instagram, MapPin, Users, ArrowLeft, Send, Loader2, Lock, Unlock, Star, Play, Languages } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { Switch } from '../../components/ui/switch';
-import { marketplaceAPI, requestsAPI, paymentsAPI, businessAPI, getErrorMessage } from '../../lib/api';
+import { marketplaceAPI, campaignAPI, getErrorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { toast } from 'sonner';
+
+const formatPrice = (price) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price || 0);
+const formatCount = (n) => (n >= 1000000 ? `${(n / 1000000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
+const emptyForm = { brief: '', deliverables: '', budget: '', timeline: '', isBarter: false, barterDetails: '', productValue: '' };
 
 const CreatorProfile = () => {
   const { id } = useParams();
@@ -23,445 +23,204 @@ const CreatorProfile = () => {
   const { user } = useAuth();
   const [creator, setCreator] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showCampaignDialog, setShowCampaignDialog] = useState(false);
-  const [sendingCampaign, setSendingCampaign] = useState(false);
-  const [selectedMedia, setSelectedMedia] = useState(null);
-  const [accessLevel, setAccessLevel] = useState('discovery'); // discovery, unlocked, full
-  
-  const [campaignForm, setCampaignForm] = useState({
-    title: '',
-    brief: '',
-    price: '',
-    deliverables: '',
-    timeline: '',
-    isBarter: false,
-    barterDetails: ''
-  });
+  const [error, setError] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
-  useEffect(() => {
-    loadCreator();
-  }, [id]);
-
-  const loadCreator = async () => {
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      // Try to get unlocked/full access
-      const response = await marketplaceAPI.getUnlockedCreator(id);
-      setCreator(response.data);
-      // Check if identity is unlocked (via campaign) or just context unlocked
-      // For now, we assume context unlock (full access comes from campaign)
-      setAccessLevel('unlocked');
+      const res = await marketplaceAPI.getCreator(id);
+      setCreator(res.data);
+      setError('');
     } catch (e) {
-      if (e.response?.status === 403) {
-        toast.error("Please unlock this creator first");
-        navigate('/dashboard/business');
-      } else {
-        toast.error("Creator not found");
-        navigate(-1);
-      }
+      setError(getErrorMessage(e, 'Creator not found'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  const handleSendCampaign = async () => {
-    if (!campaignForm.title || !campaignForm.brief) {
-      toast.error("Please fill in title and brief");
-      return;
-    }
+  useEffect(() => { load(); }, [load]);
 
-    setSendingCampaign(true);
+  const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
+
+  const sendRequest = async () => {
+    if (!form.deliverables.trim()) return toast.error('Add the deliverables you want');
+    const budget = parseFloat(form.budget) || 0;
+    const productValue = parseFloat(form.productValue) || 0;
+    if (!form.isBarter && budget <= 0) return toast.error('Add a budget greater than zero');
+    if (form.isBarter && productValue <= 0) return toast.error('Add the value of the product or service');
+    setSending(true);
     try {
-      // Send collab request (not campaign - campaigns are created after request is accepted)
-      await requestsAPI.create({
+      await campaignAPI.create({
         receiverId: id,
         receiverType: 'creator',
-        message: `${campaignForm.title}\n\n${campaignForm.brief}\n\nDeliverables: ${campaignForm.deliverables}\nTimeline: ${campaignForm.timeline}${campaignForm.isBarter ? '\n\nBarter: ' + campaignForm.barterDetails : ''}`,
-        proposedBudget: parseFloat(campaignForm.price) || 0,
-        deliverables: campaignForm.deliverables
+        campaignType: form.isBarter ? 'barter_product' : 'paid',
+        deliverables: form.deliverables,
+        budget: form.isBarter ? 0 : budget,
+        productValue: form.isBarter ? productValue : 0,
+        timeline: form.timeline,
+        brief: form.brief,
+        barterDetails: form.isBarter ? form.barterDetails : '',
       });
-      toast.success("Request sent! Waiting for creator's response ✨");
-      setShowCampaignDialog(false);
-      setCampaignForm({ title: '', brief: '', price: '', deliverables: '', timeline: '', isBarter: false, barterDetails: '' });
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to send request"));
+      toast.success('Request sent. You can track it on your dashboard.');
+      setDialogOpen(false);
+      setForm(emptyForm);
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Failed to send request'));
     } finally {
-      setSendingCampaign(false);
+      setSending(false);
     }
-  };
-
-  const formatFollowers = (count) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
-  };
-
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen gradient-hero flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 mx-auto text-primary animate-spin mb-4" />
-          <p className="text-muted-foreground">Loading profile...</p>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
       </div>
     );
   }
 
-  const canSendCampaign = user && user.role === 'business' && accessLevel !== 'discovery';
-  const canSeeInstagram = accessLevel === 'full' && creator?.instagramUsername;
+  if (error || !creator) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6 text-center">
+        <p className="text-lg font-semibold">{error || 'Creator not found'}</p>
+        <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="w-4 h-4 mr-2" />Go back</Button>
+      </div>
+    );
+  }
 
-  // For unlocked profiles, show the bio as the name since identity is still hidden
-  const displayName = creator?.name || 'Creator';
-  const displayLocation = creator?.location || creator?.city || '';
+  const canRequest = user?.role === 'business' && !creator.isOwner;
+  const prices = [
+    ['Reel', creator.reelPrice], ['Story', creator.storyPrice], ['Post', creator.postPrice],
+    ['Carousel', creator.carouselPrice], ['Bundle', creator.bundlePrice],
+  ].filter(([, v]) => v > 0);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-orange-100 bg-white/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Button variant="ghost" className="rounded-full" onClick={() => navigate(-1)} data-testid="back-btn">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-white">🍊</span>
-            </div>
-            <span className="font-heading font-bold">Orange</span>
-          </div>
-          
-          {/* Access Level Badge */}
-          <Badge className={accessLevel === 'full' ? 'bg-green-500 text-white' : 'bg-primary text-white'}>
-            {accessLevel === 'full' ? (
-              <><Unlock className="w-3 h-3 mr-1" /> Full Access</>
-            ) : (
-              <><Unlock className="w-3 h-3 mr-1" /> Context Unlocked</>
-            )}
+      <header className="border-b bg-white/70 backdrop-blur-sm sticky top-0 z-40">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+          <Button variant="ghost" onClick={() => navigate(-1)} data-testid="back-btn"><ArrowLeft className="w-4 h-4 mr-2" />Back</Button>
+          <Badge variant="outline" className="gap-1" data-testid="identity-badge">
+            {creator.identityUnlocked ? <><Unlock className="w-3 h-3" />Identity visible</> : <><Lock className="w-3 h-3" />Identity unlocks after payment</>}
           </Badge>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Profile Info */}
-          <div className="lg:col-span-1">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="card-orange p-6 sticky top-24"
-            >
-              <div className="text-center mb-6">
-                <Avatar className="w-32 h-32 mx-auto mb-4 border-4 border-primary">
-                  <AvatarImage src={creator?.profilePhotoUrl} />
-                  <AvatarFallback className="bg-primary text-white text-4xl">
-                    {creator?.name?.[0]}
-                  </AvatarFallback>
-                </Avatar>
-                <h1 className="font-heading text-2xl font-bold mb-2">{displayName}</h1>
-                <p className="text-muted-foreground mb-4">{creator?.bio}</p>
-                
-                <div className="flex items-center justify-center gap-4 text-sm text-muted-foreground mb-4">
-                  {displayLocation && (
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      {displayLocation}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    {formatFollowers(creator?.followersCount || 0)}
-                  </div>
-                </div>
-
-                {/* Engagement Rate */}
-                {creator?.engagementRate && (
-                  <div className="bg-accent/20 rounded-xl p-3 mb-4">
-                    <p className="text-sm text-muted-foreground">Engagement Rate</p>
-                    <p className="text-2xl font-bold text-primary">{creator.engagementRate.toFixed(2)}%</p>
-                  </div>
-                )}
-
-                {/* Niches */}
-                <div className="flex flex-wrap justify-center gap-2 mb-4">
-                  {creator?.niches?.map(niche => (
-                    <Badge key={niche} variant="secondary" className="bg-primary/10 text-primary">
-                      {niche}
-                    </Badge>
-                  ))}
-                </div>
-
-                {creator?.isOpenToBarter && (
-                  <Badge className="bg-accent text-accent-foreground mb-4">
-                    🤝 Open to Barter
-                  </Badge>
-                )}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+        <section className="bg-card border rounded-xl p-6 flex flex-col sm:flex-row gap-6">
+          <Avatar className="w-24 h-24">
+            {creator.profilePhotoUrl && <AvatarImage src={creator.profilePhotoUrl} alt="" />}
+            <AvatarFallback className="text-2xl">{(creator.name || 'C').charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 space-y-3">
+            <div>
+              <h1 className="text-3xl font-heading font-bold" data-testid="creator-name">{creator.name}</h1>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
+                {creator.location && <span className="flex items-center gap-1"><MapPin className="w-4 h-4" />{creator.location}</span>}
+                {creator.language && <span className="flex items-center gap-1"><Languages className="w-4 h-4" />{creator.language}</span>}
+                {creator.instagramUsername && <span className="flex items-center gap-1"><Instagram className="w-4 h-4" />@{creator.instagramUsername.replace(/^@/, '')}</span>}
               </div>
-
-              {/* Rates */}
-              <div className="border-t border-orange-100 pt-4 mb-6">
-                <h3 className="font-semibold text-sm text-muted-foreground mb-3">RATES</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Reel</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.reelPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Story</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.storyPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Carousel</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.carouselPrice || 0)}</p>
-                  </div>
-                  <div className="bg-muted/50 p-3 rounded-xl">
-                    <p className="text-xs text-muted-foreground">Post</p>
-                    <p className="font-bold text-primary">{formatPrice(creator?.rates?.postPrice || 0)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="space-y-3">
-                {/* Instagram - Only visible after escrow */}
-                {canSeeInstagram && creator?.instagramUrl ? (
-                  <Button
-                    variant="outline"
-                    className="w-full rounded-full"
-                    onClick={() => window.open(creator.instagramUrl, '_blank')}
-                    data-testid="instagram-btn"
-                  >
-                    <Instagram className="w-4 h-4 mr-2" />
-                    {creator.instagramHandle || 'Go to Instagram'}
-                  </Button>
-                ) : (
-                  <div className="bg-muted/50 rounded-full p-3 text-center">
-                    <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
-                      <Lock className="w-4 h-4" />
-                      Instagram unlocks after campaign payment
-                    </p>
-                  </div>
-                )}
-                
-                {canSendCampaign && (
-                  <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
-                    <DialogTrigger asChild>
-                      <Button className="w-full btn-primary" data-testid="send-campaign-btn">
-                        <Send className="w-4 h-4 mr-2" />
-                        Send Campaign Proposal
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[500px]">
-                      <DialogHeader>
-                        <DialogTitle className="font-heading text-xl">
-                          Send Campaign to {creator?.name} 🍊
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4 pt-4">
-                        <div className="space-y-2">
-                          <Label>Campaign Title *</Label>
-                          <Input
-                            placeholder="Summer Collection 2024"
-                            value={campaignForm.title}
-                            onChange={(e) => setCampaignForm(prev => ({ ...prev, title: e.target.value }))}
-                            className="input-orange"
-                            data-testid="campaign-title-input"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Brief *</Label>
-                          <Textarea
-                            placeholder="Tell them about your campaign..."
-                            value={campaignForm.brief}
-                            onChange={(e) => setCampaignForm(prev => ({ ...prev, brief: e.target.value }))}
-                            className="input-orange min-h-[100px]"
-                            data-testid="campaign-brief-input"
-                          />
-                        </div>
-                        
-                        {/* Barter Toggle */}
-                        <div className="flex items-center justify-between p-4 bg-accent/20 rounded-xl">
-                          <div>
-                            <p className="font-semibold">Barter Deal 🤝</p>
-                            <p className="text-sm text-muted-foreground">Product exchange instead of cash</p>
-                          </div>
-                          <Switch
-                            checked={campaignForm.isBarter}
-                            onCheckedChange={(checked) => setCampaignForm(prev => ({ ...prev, isBarter: checked }))}
-                            data-testid="barter-toggle"
-                          />
-                        </div>
-
-                        {campaignForm.isBarter ? (
-                          <div className="space-y-2">
-                            <Label>Barter Details</Label>
-                            <Textarea
-                              placeholder="What products/services will you provide?"
-                              value={campaignForm.barterDetails}
-                              onChange={(e) => setCampaignForm(prev => ({ ...prev, barterDetails: e.target.value }))}
-                              className="input-orange"
-                              data-testid="barter-details-input"
-                            />
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label>Budget (₹)</Label>
-                              <Input
-                                type="number"
-                                placeholder="15000"
-                                value={campaignForm.price}
-                                onChange={(e) => setCampaignForm(prev => ({ ...prev, price: e.target.value }))}
-                                className="input-orange"
-                                data-testid="campaign-price-input"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Timeline</Label>
-                              <Input
-                                placeholder="2 weeks"
-                                value={campaignForm.timeline}
-                                onChange={(e) => setCampaignForm(prev => ({ ...prev, timeline: e.target.value }))}
-                                className="input-orange"
-                                data-testid="campaign-timeline-input"
-                              />
-                            </div>
-                          </div>
-                        )}
-                        
-                        <div className="space-y-2">
-                          <Label>Deliverables</Label>
-                          <Input
-                            placeholder="3 Reels, 5 Stories"
-                            value={campaignForm.deliverables}
-                            onChange={(e) => setCampaignForm(prev => ({ ...prev, deliverables: e.target.value }))}
-                            className="input-orange"
-                            data-testid="campaign-deliverables-input"
-                          />
-                        </div>
-                        
-                        <Button
-                          onClick={handleSendCampaign}
-                          disabled={sendingCampaign}
-                          className="w-full btn-primary"
-                          data-testid="submit-campaign-btn"
-                        >
-                          {sendingCampaign ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4 mr-2" />
-                          )}
-                          Send Proposal
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                )}
-                
-                {!user && (
-                  <Button
-                    className="w-full btn-primary"
-                    onClick={() => navigate('/signup?role=business')}
-                  >
-                    Sign up as Brand to Collaborate
-                  </Button>
-                )}
-              </div>
-            </motion.div>
+            </div>
+            {creator.bio && <p className="text-foreground/80">{creator.bio}</p>}
+            <div className="flex flex-wrap gap-2">
+              {(creator.niches?.length ? creator.niches : [creator.niche]).filter(Boolean).map((n) => <Badge key={n} variant="secondary">{n}</Badge>)}
+              {creator.instagramVerified && <Badge variant="outline">Instagram connected</Badge>}
+              {creator.barterEnabled && <Badge variant="outline">Open to barter</Badge>}
+            </div>
           </div>
+          {canRequest && (
+            <div className="sm:self-center">
+              <Button onClick={() => setDialogOpen(true)} data-testid="send-request-btn"><Send className="w-4 h-4 mr-2" />Send request</Button>
+            </div>
+          )}
+        </section>
 
-          {/* Media Gallery */}
-          <div className="lg:col-span-2">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              <h2 className="font-heading text-2xl font-bold mb-6 flex items-center gap-2">
-                <ImageIcon className="w-6 h-6" />
-                Content Gallery
-              </h2>
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Stat label="Followers" value={creator.followersCount ? formatCount(creator.followersCount) : 'Not shared'} icon={Users} />
+          <Stat label="Engagement" value={creator.engagementMeasured ? `${creator.engagementRate}%` : 'Not measured yet'} />
+          <Stat label="Rating" value={creator.rating ? `${creator.rating.toFixed(1)} / 5` : 'No ratings yet'} icon={Star} />
+          <Stat label="Completed on Orange" value={String(creator.totalCollabs || 0)} />
+        </section>
 
-              {creator?.mediaGallery?.length > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {creator.mediaGallery.map((media, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: idx * 0.05 }}
-                      className="aspect-square rounded-2xl overflow-hidden bg-muted cursor-pointer group relative"
-                      onClick={() => setSelectedMedia(media)}
-                    >
-                      {media.type === 'video' ? (
-                        <>
-                          <img 
-                            src={media.thumbnailUrl || media.url} 
-                            alt="" 
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-14 h-14 bg-black/50 rounded-full flex items-center justify-center">
-                              <Play className="w-6 h-6 text-white fill-white" />
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <img 
-                          src={media.thumbnailUrl || media.url} 
-                          alt="" 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                        />
-                      )}
-                    </motion.div>
-                  ))}
+        <section className="space-y-3">
+          <h2 className="text-xl font-heading font-semibold">Rates</h2>
+          {prices.length ? (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {prices.map(([label, value]) => (
+                <div key={label} className="border rounded-lg p-3 bg-card">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="font-semibold">{formatPrice(value)}</p>
                 </div>
-              ) : (
-                <div className="card-orange p-12 text-center">
-                  <ImageIcon className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No media uploaded yet</p>
+              ))}
+            </div>
+          ) : <p className="text-muted-foreground text-sm">This creator hasn't added rates yet.</p>}
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-xl font-heading font-semibold">Portfolio</h2>
+          {creator.mediaGallery?.length ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {creator.mediaGallery.map((m, i) => (
+                <div key={m.id || i} className="relative aspect-[4/5] rounded-lg overflow-hidden bg-muted">
+                  {m.type === 'video'
+                    ? <><video src={m.url} className="w-full h-full object-cover" muted /><Play className="absolute inset-0 m-auto w-10 h-10 text-white drop-shadow" /></>
+                    : <img src={m.thumbnailUrl || m.url} alt="" className="w-full h-full object-cover" />}
                 </div>
-              )}
-            </motion.div>
-          </div>
-        </div>
+              ))}
+            </div>
+          ) : <p className="text-muted-foreground text-sm">No portfolio items yet.</p>}
+        </section>
+
+        <section className="space-y-3">
+          <h2 className="text-xl font-heading font-semibold">Reviews from brands</h2>
+          {creator.ratings?.length ? creator.ratings.map((r, i) => (
+            <div key={i} className="border rounded-lg p-4 bg-card">
+              <p className="font-medium">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</p>
+              <p className="text-sm text-foreground/80 mt-1">{r.feedback}</p>
+            </div>
+          )) : <p className="text-muted-foreground text-sm">No reviews yet.</p>}
+        </section>
       </main>
 
-      {/* Media Lightbox */}
-      {selectedMedia && (
-        <div 
-          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedMedia(null)}
-        >
-          <Button
-            variant="ghost"
-            className="absolute top-4 right-4 text-white hover:bg-white/20 rounded-full"
-            onClick={() => setSelectedMedia(null)}
-          >
-            ✕
-          </Button>
-          {selectedMedia.type === 'video' ? (
-            <video 
-              src={selectedMedia.url} 
-              controls 
-              autoPlay 
-              className="max-w-full max-h-[90vh] rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <img 
-              src={selectedMedia.url} 
-              alt="" 
-              className="max-w-full max-h-[90vh] rounded-lg object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
-          )}
-        </div>
-      )}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Send a collaboration request</DialogTitle>
+            <DialogDescription>The creator has 72 hours to accept. You pay only after they accept.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="barter">Barter instead of paid</Label>
+              <Switch id="barter" checked={form.isBarter} onCheckedChange={(v) => update('isBarter', v)} />
+            </div>
+            <div className="space-y-1"><Label>Deliverables</Label><Input value={form.deliverables} onChange={(e) => update('deliverables', e.target.value)} placeholder="1 reel + 2 stories" data-testid="deliverables-input" /></div>
+            {form.isBarter ? (
+              <>
+                <div className="space-y-1"><Label>Product or service value (₹)</Label><Input type="number" value={form.productValue} onChange={(e) => update('productValue', e.target.value)} /></div>
+                <div className="space-y-1"><Label>What you'll offer</Label><Input value={form.barterDetails} onChange={(e) => update('barterDetails', e.target.value)} placeholder="Meal for two" /></div>
+              </>
+            ) : (
+              <div className="space-y-1"><Label>Budget (₹)</Label><Input type="number" value={form.budget} onChange={(e) => update('budget', e.target.value)} placeholder={creator.reelPrice ? String(creator.reelPrice) : '5000'} data-testid="budget-input" /></div>
+            )}
+            <div className="space-y-1"><Label>Timeline</Label><Input value={form.timeline} onChange={(e) => update('timeline', e.target.value)} placeholder="Post by 30 Nov" /></div>
+            <div className="space-y-1"><Label>Brief</Label><Textarea value={form.brief} onChange={(e) => update('brief', e.target.value)} placeholder="What should the content show?" /></div>
+            <Button className="w-full" onClick={sendRequest} disabled={sending} data-testid="submit-request-btn">
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send request'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+const Stat = ({ label, value, icon: Icon }) => (
+  <div className="border rounded-xl p-4 bg-card">
+    <p className="text-xs text-muted-foreground flex items-center gap-1">{Icon && <Icon className="w-3 h-3" />}{label}</p>
+    <p className="text-lg font-semibold mt-1">{value}</p>
+  </div>
+);
 
 export default CreatorProfile;

@@ -321,7 +321,7 @@ const CreatorOnboarding = () => {
                     <div>
                       <p className="font-semibold text-green-800">Instagram Verified! ✓</p>
                       <p className="text-sm text-green-600">
-                        {parseInt(formData.followersCount).toLocaleString()} followers • {formData.engagementRate}% engagement
+                        {parseInt(formData.followersCount) > 0 ? `${parseInt(formData.followersCount).toLocaleString()} followers` : 'Professional account connected'}
                       </p>
                     </div>
                   </div>

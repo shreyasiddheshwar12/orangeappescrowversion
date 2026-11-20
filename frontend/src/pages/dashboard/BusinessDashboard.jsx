@@ -881,7 +881,7 @@ const CreatorCard = ({ creator, index, onClick }) => {
             {creator.niche} Creator
           </h3>
           <div className="flex items-center gap-3 text-sm opacity-90">
-            <span>{creator.engagementRate}% ER</span>
+            <span>{creator.engagementMeasured && creator.engagementRate != null ? `${creator.engagementRate}% ER` : 'ER not measured'}</span>
             <span>•</span>
             <span>{creator.location}</span>
           </div>
