@@ -65,8 +65,10 @@ async def business_intelligence(brand: dict, niches_available: List[str]) -> dic
         out["suggestedNiches"] = [allowed[n.lower()] for n in out["suggestedNiches"] if n.lower() in allowed]
         return {"engine": "claude", **out}
     preferred = [allowed[n.lower()] for n in (brand.get("preferredNiches") or []) if n.lower() in allowed]
-    if not preferred and (brand.get("industry") or "").lower() in allowed:
-        preferred = [allowed[brand["industry"].lower()]]
+    if not preferred:
+        # "Food & Beverage" -> Food: use any creator niche named in the industry.
+        industry = (brand.get("industry") or "").lower()
+        preferred = [name for key, name in allowed.items() if key and key in industry]
     summary = f"{brand.get('brandName') or 'Your business'}"
     if brand.get("industry"):
         summary += f" is a {brand['industry'].lower()} business"
@@ -80,7 +82,7 @@ async def business_intelligence(brand: dict, niches_available: List[str]) -> dic
         "summary": summary,
         "audience": brand.get("targetAudience") or "Not set yet.",
         "sellingPoints": [],
-        "gaps": [f"Add your {m} in your profile." for m in missing],
+        "gaps": [f"Add your {', '.join(missing)} to your profile for sharper plans."] if missing else [],
         "suggestedNiches": preferred,
     }
 

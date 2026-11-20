@@ -10,6 +10,7 @@ import CollaborationRow from '../../components/orange/CollaborationRow';
 import CollaborationSheet from '../../components/orange/CollaborationSheet';
 import CreatorCard from '../../components/orange/CreatorCard';
 import RequestDialog from '../../components/orange/RequestDialog';
+import GrowthAssistant from '../../components/orange/GrowthAssistant';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Switch } from '../../components/ui/switch';
@@ -20,7 +21,7 @@ import { ACTIVE_STATES, IN_FLIGHT_STATES, nextStep } from '../../lib/collaborati
 import { formatINR, greeting } from '../../lib/format';
 
 const NICHES = ['All', 'Food', 'Lifestyle', 'Fashion', 'Beauty', 'Fitness', 'Travel', 'Tech', 'Gaming', 'Comedy', 'Education', 'Music', 'Art', 'Sports', 'Health', 'Finance'];
-const VIEWS = ['home', 'discover', 'campaigns'];
+const VIEWS = ['home', 'growth', 'discover', 'campaigns'];
 
 const BusinessDashboard = () => {
   const navigate = useNavigate();
@@ -89,6 +90,7 @@ const BusinessDashboard = () => {
 
   const nav = [
     { key: 'home', label: 'Home', icon: Home, badge: attention.length },
+    { key: 'growth', label: 'Growth Assistant', icon: Sparkles },
     { key: 'discover', label: 'Find creators', icon: Search },
     { key: 'campaigns', label: 'Collaborations', icon: Layers, badge: pendingIncoming },
   ];
@@ -136,10 +138,10 @@ const BusinessDashboard = () => {
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-plum text-white"><Sparkles className="h-5 w-5" /></div>
                 <div>
                   <p className="font-display text-xl text-ink">Tell Orange what you want to achieve</p>
-                  <p className="mt-1 max-w-xl text-sm text-ink-500">The Growth Assistant will plan a campaign, budget it and shortlist creators from Orange. It's being built now. Until then, find creators directly.</p>
+                  <p className="mt-1 max-w-xl text-sm text-ink-500">Describe your goal and budget. Orange plans the campaign and shortlists creators for you to approve.</p>
                 </div>
               </div>
-              <Button variant="plum" onClick={() => setView('discover')}>Browse creators<ArrowRight /></Button>
+              <Button variant="plum" onClick={() => setView('growth')} data-testid="open-growth">Plan a campaign<ArrowRight /></Button>
             </div>
           </div>
 
@@ -164,6 +166,13 @@ const BusinessDashboard = () => {
               <div className="surface overflow-hidden">{all.slice(0, 5).map((c) => <CollaborationRow key={c.id} collab={c} role="business" onOpen={setOpenCollab} />)}</div>
             </Section>
           )}
+        </div>
+      )}
+
+      {view === 'growth' && (
+        <div className="space-y-8 animate-fade-in">
+          <PageHeader eyebrow="Growth Assistant" title="Plan a campaign" description="Five specialists read your business, plan the campaign and shortlist creators. You approve before anything is sent." />
+          <GrowthAssistant onOpenCollaborations={() => setView('campaigns')} />
         </div>
       )}
 

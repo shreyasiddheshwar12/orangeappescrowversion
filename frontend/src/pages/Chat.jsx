@@ -102,7 +102,7 @@ const Chat = () => {
       setMessages((m) => [...m, res.data]);
       setText('');
       setPending([]);
-      if (res.data.blocked) toast.warning('That message was hidden: contact details are shared once identities unlock.');
+      if (res.data.flagged) toast.warning('Contact details sent. Payments made outside Orange are not protected.');
     } catch (err) {
       toast.error(getErrorMessage(err, 'Message not sent'));
     } finally {
@@ -166,6 +166,11 @@ const Chat = () => {
                           <p className={`mt-0.5 text-right text-[10px] ${mine ? 'text-white/60' : 'text-muted-foreground'}`}>{timeLabel(m.createdAt)}</p>
                         </div>
                       </div>
+                      {m.flagged && (
+                        <p className={`mt-1 flex items-center gap-1 text-[11px] text-amber-700 ${mine ? 'justify-end' : 'justify-start'}`}>
+                          <ShieldAlert className="h-3 w-3" />Contact details shared. Deals and payments outside Orange aren't protected.
+                        </p>
+                      )}
                     </li>
                   );
                 })}
