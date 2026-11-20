@@ -35,6 +35,24 @@ Creator–brand marketplace with protected collaboration payments and an escrow-
 
 This is an **escrow-style application workflow and ledger**. Standard Razorpay Checkout does not by itself create a legally regulated escrow account. Production fund disbursement to creators requires an approved Razorpay Route setup and properly onboarded Linked Accounts.
 
+## Growth Assistant
+
+`backend/orange/growth/` runs a business's goal through five capabilities and stores every step so the dashboard can show a timeline:
+
+1. **Business Intelligence** reads the brand profile.
+2. **Performance Analyst** summarises past collaborations from campaigns, ratings and the ledger.
+3. **Marketing Planner** turns the goal and budget into a plan. The budget is capped in code (at least 10% kept in reserve).
+4. **Creator Matching** ranks creators with a deterministic score: niche 25, location 20, price fit 20, TrustScore 15, measured engagement 10, language 5, availability 5. A factor without data is left out rather than guessed, and each creator shows why they scored as they did.
+5. **Campaign Assistant** writes briefs and sends real collaboration requests, but only after the business approves the shortlist.
+
+With `ANTHROPIC_API_KEY` set, steps 1, 3 and 5 (and 2 once there is history) use the Claude API with structured outputs. The key never leaves the server. Without it, each step falls back to rules that only restate the business's own data, and the timeline labels which engine ran.
+
+Routes live under `/api/growth`: `GET /status`, `POST /runs`, `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/approve`, `POST /runs/{id}/cancel`.
+
+**Data changes (additive):** new collections `agent_runs`, `agent_steps` and `growth_campaigns`, and an optional `growthCampaignId` on `campaigns`. Existing documents need no migration.
+
+**Chat:** messages that contain contact details are no longer replaced. They are delivered with `flagged: true`, and the app reminds both sides that payments outside Orange aren't protected. Attempts are still logged in `bypass_attempts`.
+
 ## Payment providers
 
 Payment execution sits behind `backend/orange/payments/` (`PaymentProvider`). Two providers exist:
