@@ -348,11 +348,12 @@ async def get_brand_profile(current_user=Depends(get_current_user)):
     return BrandProfileFull(**p)
 
 @marketplace_router.get('/creators',response_model=List[CreatorDiscovery])
-async def creators(niche:Optional[str]=None,language:Optional[str]=None,contentType:Optional[str]=None,minPrice:Optional[float]=None,maxPrice:Optional[float]=None,barterOnly:Optional[bool]=None,current_user=Depends(get_current_user)):
+async def creators(niche:Optional[str]=None,language:Optional[str]=None,contentType:Optional[str]=None,location:Optional[str]=None,minPrice:Optional[float]=None,maxPrice:Optional[float]=None,barterOnly:Optional[bool]=None,current_user=Depends(get_current_user)):
     q={'instagramVerified':True,'isBlacklisted':{'$ne':True},'isVisible':{'$ne':False}}; 
     if niche:q['$or']=[{'niche':niche},{'niches':niche}]
     if language:q['language']=language
     if contentType:q['contentType']=contentType
+    if location:q['location']={'$regex':re.escape(location),'$options':'i'}
     if barterOnly:q['barterEnabled']=True
     items=await db.creator_profiles.find(q,{'_id':0}).to_list(100)
     if minPrice is not None: items=[x for x in items if x.get('reelPrice',0)>=minPrice]
@@ -518,13 +519,15 @@ async def pay_compat(campaign_id:str,current_user=Depends(get_current_user)): re
 async def shipping(campaign_id:str,shippingDetails:str=Query(...),current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
-    if c['senderUserId']!=current_user['id']: raise HTTPException(status_code=403,detail='Only sender can add shipping details')
+    if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can add shipping details')
+    if c['status'] not in ('paid','in_progress'): raise HTTPException(status_code=400,detail='Shipping can be added after payment')
     await db.campaigns.update_one({'id':campaign_id},{'$set':{'shippingDetails':shippingDetails,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'Shipping details added'}
 @campaign_router.post('/{campaign_id}/product-received')
 async def product_received(campaign_id:str,current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
-    if c['receiverUserId']!=current_user['id']: raise HTTPException(status_code=403,detail='Only receiver can confirm receipt')
+    if creator_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the creator can confirm receipt')
+    if c['status'] not in ('paid','in_progress'): raise HTTPException(status_code=400,detail='Receipt can be confirmed after payment')
     await db.campaigns.update_one({'id':campaign_id},{'$set':{'productReceived':True,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'Product receipt confirmed'}
 @campaign_router.post('/{campaign_id}/submit-link')
 async def submit_link(campaign_id:str,contentLink:str=Query(...),current_user=Depends(get_current_user)):
@@ -570,7 +573,7 @@ async def complete(campaign_id:str,current_user=Depends(get_current_user)):
     if c['campaignType']=='paid':
         await ledger.record(db,campaign_id=campaign_id,entry_type='payout_released' if result['released'] else 'payout_pending',amount=result['amount'],provider=mode,payment_id=c.get('razorpayPaymentId'),meta={'transferId':result.get('transferId'),'reason':result.get('reason')})
         await ledger.record(db,campaign_id=campaign_id,entry_type='commission',amount=c.get('platformCommission',0),provider=mode,payment_id=c.get('razorpayPaymentId'))
-    await db.creator_profiles.update_one({'userId':creator_user_id(c)},{'$inc':{'totalCollabs':1}}); return {'success':True,'status':'completed','payoutAmount':result['amount'],'payoutStatus':'released' if result['released'] else 'pending','message':'Campaign completed! Creator payout released.' if result['released'] else 'Campaign completed. Creator payout is pending linked-account setup.'}
+    await db.creator_profiles.update_one({'userId':creator_user_id(c)},{'$inc':{'totalCollabs':1}}); return {'success':True,'status':'completed','payoutAmount':result['amount'],'payoutStatus':'released' if result['released'] else 'pending','message':('Campaign completed! Creator payout released.' if result['released'] else 'Campaign completed. Creator payout is pending linked-account setup.')+(' (simulated payment, no money moved)' if mode=='simulated' else '')}
 @campaign_router.post('/{campaign_id}/rate')
 async def rate(campaign_id:str,rating:int=Query(...,ge=1,le=5),feedback:str=Query(...,min_length=10),current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});

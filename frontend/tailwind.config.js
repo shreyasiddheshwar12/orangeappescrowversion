@@ -8,65 +8,76 @@ module.exports = {
     			border: 'hsl(var(--border))',
     			input: 'hsl(var(--input))',
     			ring: 'hsl(var(--ring))',
-    			background: '#FFFBF7',
-    			foreground: '#2D241E',
+    			background: 'hsl(var(--background))',
+    			foreground: 'hsl(var(--foreground))',
     			primary: {
-    				DEFAULT: '#FF6B00',
-    				foreground: '#FFFFFF',
-    				hover: '#E65A00',
-    				light: '#FFD8C2'
+    				DEFAULT: 'hsl(var(--primary))',
+    				foreground: 'hsl(var(--primary-foreground))',
+    				hover: '#F2622A',
+    				light: '#FFE5D8',
+    				ink: '#C44A15'
     			},
     			secondary: {
-    				DEFAULT: '#FFD8C2',
-    				foreground: '#2D241E'
+    				DEFAULT: 'hsl(var(--secondary))',
+    				foreground: 'hsl(var(--secondary-foreground))'
     			},
     			destructive: {
-    				DEFAULT: '#FF453A',
-    				foreground: '#FFFFFF'
+    				DEFAULT: 'hsl(var(--destructive))',
+    				foreground: 'hsl(var(--destructive-foreground))'
     			},
     			muted: {
-    				DEFAULT: '#F5EFE6',
-    				foreground: '#786C66'
+    				DEFAULT: 'hsl(var(--muted))',
+    				foreground: 'hsl(var(--muted-foreground))'
     			},
     			accent: {
-    				DEFAULT: '#CCF381',
-    				foreground: '#2D241E',
-    				blue: '#4D96FF',
-    				pink: '#FF8CC6'
+    				DEFAULT: 'hsl(var(--accent))',
+    				foreground: 'hsl(var(--accent-foreground))'
     			},
     			popover: {
-    				DEFAULT: '#FFFFFF',
-    				foreground: '#2D241E'
+    				DEFAULT: 'hsl(var(--popover))',
+    				foreground: 'hsl(var(--popover-foreground))'
     			},
     			card: {
-    				DEFAULT: '#FFFFFF',
-    				foreground: '#2D241E'
+    				DEFAULT: 'hsl(var(--card))',
+    				foreground: 'hsl(var(--card-foreground))'
     			},
+    			ink: { DEFAULT: '#242323', 700: '#3A3837', 500: '#6B6560', 300: '#A39C95' },
+    			ivory: '#FFF9F3',
+    			peach: '#FFE5D8',
+    			stone: '#F1EFEB',
+    			plum: { DEFAULT: '#49344D', 50: '#F4EFF5', 100: '#E6DCE8', 500: '#7A5E80', 700: '#49344D' },
+    			sage: { DEFAULT: '#A9B8A1', 50: '#F1F4EF', 100: '#DFE6DB', 400: '#A9B8A1', 700: '#5E7356' },
+    			amber: { 50: '#FDF5E7', 100: '#F9E5C0', 700: '#8A5A0B' },
+    			brick: { 50: '#FCEEEC', 100: '#F6D3CE', 700: '#B42318' },
     			orange: {
-    				50: '#FFF7ED',
-    				100: '#FFEDD5',
-    				200: '#FFD8C2',
-    				300: '#FDBA74',
-    				400: '#FB923C',
-    				500: '#F97316',
-    				600: '#FF6B00',
-    				700: '#C2410C',
-    				800: '#9A3412',
-    				900: '#7C2D12'
+    				50: '#FFF6F0',
+    				100: '#FFE5D8',
+    				200: '#FFCBB2',
+    				300: '#FFA67F',
+    				400: '#FF8A5B',
+    				500: '#FF7138',
+    				600: '#E85D24',
+    				700: '#C44A15',
+    				800: '#9A3A12',
+    				900: '#6E2A0E'
     			}
     		},
     		borderRadius: {
-    			lg: '1.5rem',
-    			md: '1rem',
-    			sm: '0.75rem'
+    			xl: '14px',
+    			lg: '12px',
+    			md: '8px',
+    			sm: '6px'
     		},
     		fontFamily: {
-    			sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-    			heading: ['Syne', 'system-ui', 'sans-serif']
+    			sans: ['Inter Variable', 'Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+    			heading: ['Fraunces Variable', 'Fraunces', 'Georgia', 'serif'],
+    			display: ['Fraunces Variable', 'Fraunces', 'Georgia', 'serif']
     		},
     		boxShadow: {
-    			'soft-orange': '0 10px 40px -10px rgba(255, 107, 0, 0.15)',
-    			'float': '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.01)'
+    			'soft-orange': '0 8px 24px -12px rgba(255, 113, 56, 0.45)',
+    			'float': '0 12px 32px -12px rgba(36, 35, 35, 0.18)',
+    			'card': '0 1px 2px rgba(36, 35, 35, 0.04), 0 1px 1px rgba(36, 35, 35, 0.02)',
+    			'lift': '0 6px 20px -8px rgba(36, 35, 35, 0.16)'
     		},
     		keyframes: {
     			'accordion-down': {
@@ -78,14 +89,19 @@ module.exports = {
     				to: { height: '0' }
     			},
     			'fade-in': {
-    				from: { opacity: '0', transform: 'translateY(10px)' },
+    				from: { opacity: '0', transform: 'translateY(6px)' },
     				to: { opacity: '1', transform: 'translateY(0)' }
+    			},
+    			'pulse-dot': {
+    				'0%, 100%': { opacity: '1' },
+    				'50%': { opacity: '0.35' }
     			}
     		},
     		animation: {
     			'accordion-down': 'accordion-down 0.2s ease-out',
     			'accordion-up': 'accordion-up 0.2s ease-out',
-    			'fade-in': 'fade-in 0.5s ease-out forwards'
+    			'fade-in': 'fade-in 0.25s ease-out both',
+    			'pulse-dot': 'pulse-dot 1.4s ease-in-out infinite'
     		}
     	}
     },

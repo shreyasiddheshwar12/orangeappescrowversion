@@ -139,6 +139,7 @@ export const marketplaceAPI = {
     if (filters.niche) params.append('niche', filters.niche);
     if (filters.language) params.append('language', filters.language);
     if (filters.contentType) params.append('contentType', filters.contentType);
+    if (filters.location) params.append('location', filters.location);
     if (filters.minPrice) params.append('minPrice', filters.minPrice);
     if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
     if (filters.barterOnly) params.append('barterOnly', filters.barterOnly);

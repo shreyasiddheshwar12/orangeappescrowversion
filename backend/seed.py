@@ -36,7 +36,13 @@ def build_seed_documents():
         ('Arjun Kapoor', 'Fitness', 'English', 'Reels, Stories', 'Delhi', 12000, 4000, 6.2),
         ('Meera Patel', 'Beauty', 'English', 'Reels', 'Bangalore', 8000, 3000, 9.1),
         ('Rahul Verma', 'Tech', 'Hindi', 'Reels, Posts', 'Hyderabad', 10000, 3500, 5.8),
+        # Pune food and lifestyle creators for the Baner cafe demo. Fictional demo data.
+        ('Sneha Joshi', 'Food', 'Marathi', 'Reels', 'Baner, Pune', 4000, 1200, None),
+        ('Aditya Deshmukh', 'Food', 'Hindi', 'Reels, Stories', 'Aundh, Pune', 3500, 1000, None),
+        ('Ira Kulkarni', 'Lifestyle', 'English', 'Reels', 'Balewadi, Pune', 5000, 1500, None),
+        ('Kabir Shah', 'Food', 'English', 'Reels, Posts', 'Koregaon Park, Pune', 6500, 2000, None),
     ]
+    followers = {'Sneha Joshi': 14200, 'Aditya Deshmukh': 9800, 'Ira Kulkarni': 22500, 'Kabir Shah': 41000}
     for i, (name, niche, language, content_type, location, reel, story, engagement) in enumerate(creators, 1):
         user_id = str(uuid.uuid4())
         profile_id = str(uuid.uuid4())
@@ -74,6 +80,9 @@ def build_seed_documents():
             'instagramUserId': users[-1]['instagramUserId'],
             'instagramUsername': ig,
             'engagementRate': engagement,
+            'engagementMeasured': False,
+            'followersCount': followers.get(name),
+            'mediaGallery': [],
             'profilePhotoUrl': '',
             'isBlacklisted': False,
             'isVisible': True,
@@ -87,6 +96,7 @@ def build_seed_documents():
     brands = [
         ('Glow Cosmetics', 'Beauty', 'Mumbai', '₹10k-₹50k', 'Reels, Stories'),
         ('FitLife Nutrition', 'Health & Fitness', 'Delhi', '₹15k-₹40k', 'Reels, Posts'),
+        ('Third Wave Corner', 'Food & Beverage', 'Baner, Pune', '₹10k-₹20k', 'Reels, Stories'),
     ]
     for i, (name, industry, location, budget, deliverables) in enumerate(brands, 1):
         user_id = str(uuid.uuid4())
