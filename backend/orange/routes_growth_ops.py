@@ -202,6 +202,9 @@ def build_router(*, get_db: Callable, get_current_user: Callable, ensure_party: 
             # Businesses see money in and fees; creators see payouts and the commission taken from them.
             if brand_view and e["type"] in ("funded", "barter_fee", "refund"):
                 direction = "out" if e["type"] != "refund" else "in"
+            elif brand_view and e["type"] == "payout_released":
+                # The business's money leaving Orange's hold for the creator: shown, but not counted again.
+                direction = "none"
             elif not brand_view and e["type"] in ("payout_released", "payout_pending", "commission"):
                 direction = "out" if e["type"] == "commission" else "in"
             else:
