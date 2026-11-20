@@ -49,6 +49,12 @@ const loadRazorpayCheckout = () => new Promise((resolve, reject) => {
 const openRazorpayPayment = async (campaignId) => {
   const orderResponse = await api.post(`/payments/campaigns/${campaignId}/order`);
   const order = orderResponse.data;
+  if (order.checkout === 'simulated') {
+    // Development provider: no money moves. The backend settles the order and
+    // returns a signed result that goes through the same verification path.
+    const settled = await api.post(`/payments/simulated/${order.orderId}/settle`);
+    return api.post(`/payments/campaigns/${campaignId}/verify`, settled.data);
+  }
   const Razorpay = await loadRazorpayCheckout();
 
   return new Promise((resolve, reject) => {
@@ -177,6 +183,7 @@ export const adminAPI = {
 };
 export const seedAPI = { seed: () => api.post('/seed') };
 export const paymentsAPI = {
+  getProvider: () => api.get('/payments/provider'),
   createOrder: (campaignId) => campaignAPI.createPaymentOrder(campaignId),
   verifyPayment: (campaignId, data) => campaignAPI.verifyPayment(campaignId, data),
 };
