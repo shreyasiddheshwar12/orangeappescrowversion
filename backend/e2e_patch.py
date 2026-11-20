@@ -183,23 +183,10 @@ def _patch_server(server):
     app.add_api_route("/api/uploads", upload_file, methods=["POST"])
 
     # ---------- Backward-compatible paid campaign endpoint ----------
+    # Older clients call /campaigns/{id}/pay. Delegate to the payments order flow so
+    # barter fees, status checks and payment records stay consistent.
     async def pay_campaign(campaign_id: str, current_user=server.Depends(server.get_current_user)):
-        c = await db.campaigns.find_one({"id": campaign_id}, {"_id": 0})
-        if not c:
-            raise HTTPException(status_code=404, detail="Campaign not found")
-        if server.brand_user_id(c) != current_user["id"]:
-            raise HTTPException(status_code=403, detail="Only the brand can fund this collaboration")
-        if c.get("status") not in {"accepted", "payment_pending"}:
-            raise HTTPException(status_code=400, detail="Campaign must be accepted before payment")
-        if not server.razorpay_configured():
-            raise HTTPException(status_code=503, detail="Razorpay is not configured")
-        order = server.razorpay_request("POST", "/orders", json={
-            "amount": int(round(c.get("escrowAmount", 0) * 100)),
-            "currency": "INR", "receipt": f"campaign_{campaign_id}",
-            "notes": {"campaign_id": campaign_id},
-        })
-        await db.campaigns.update_one({"id": campaign_id}, {"$set": {"status": "payment_pending", "updatedAt": _now().isoformat()}})
-        return {"success": True, "status": "payment_pending", "orderId": order["id"], "amount": order["amount"], "currency": order["currency"], "keyId": server.RAZORPAY_KEY_ID}
+        return await server.create_payment_order(campaign_id, current_user)
 
     _remove_routes(app, "/api/campaigns/{campaign_id}/pay", {"POST"})
     app.add_api_route("/api/campaigns/{campaign_id}/pay", pay_campaign, methods=["POST"])

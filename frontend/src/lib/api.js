@@ -138,6 +138,8 @@ export const marketplaceAPI = {
     if (filters.barterOnly) params.append('barterOnly', filters.barterOnly);
     return api.get(`/marketplace/creators?${params.toString()}`);
   },
+  getCreator: (id) => api.get(`/marketplace/creators/${id}`),
+  getBrand: (id) => api.get(`/marketplace/brands/${id}`),
   discoverBrands: (filters = {}) => {
     const params = new URLSearchParams();
     if (filters.industry) params.append('industry', filters.industry);
