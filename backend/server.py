@@ -91,8 +91,9 @@ class CampaignCreate(BaseModel):
     receiverId:str; receiverType:Literal['creator','brand']; campaignType:Literal['paid','barter_product','barter_service']; deliverables:str; budget:Optional[float]=0; productValue:Optional[float]=0; timeline:Optional[str]=''; brief:Optional[str]=''; barterDetails:Optional[str]=''
 class CampaignResponse(BaseModel):
     id:str; senderId:str; senderType:str; senderName:str; receiverId:str; receiverType:str; receiverName:str; campaignType:str; deliverables:str; budget:float; productValue:float; barterFee:float; timeline:str; brief:str; barterDetails:str; status:str; paymentStatus:str; escrowAmount:float; platformCommission:float; creatorPayout:float; identityUnlocked:bool; chatEnabled:bool; contentLink:Optional[str]=None; linkVerified:bool=False; shippingDetails:Optional[str]=None; productReceived:bool=False; senderInstagram:Optional[str]=None; receiverInstagram:Optional[str]=None; createdAt:str; updatedAt:str; expiresAt:Optional[str]=None; payoutStatus:Optional[str]=None
-class MessageCreate(BaseModel): content:str
-class MessageResponse(BaseModel): id:str; campaignId:str; senderId:str; senderType:str; content:str; blocked:bool=False; createdAt:str
+class Attachment(BaseModel): url:str; type:Literal['image','video','file']='file'; name:Optional[str]=None; size:Optional[int]=None
+class MessageCreate(BaseModel): content:str=''; attachments:Optional[List[Attachment]]=None
+class MessageResponse(BaseModel): id:str; campaignId:str; senderId:str; senderType:str; content:str; blocked:bool=False; attachments:List[Attachment]=[]; createdAt:str
 class InstagramVerifyRequest(BaseModel): instagramUsername:str
 class InstagramVerifyResponse(BaseModel): success:bool; instagramUserId:str; followersCount:int; engagementRate:float; message:str
 class InstagramStatusResponse(BaseModel): connected:bool; instagramUserId:Optional[str]=None; instagramUsername:Optional[str]=None; followersCount:Optional[int]=None; engagementRate:Optional[float]=None
@@ -601,7 +602,11 @@ async def messages_send(campaign_id:str,message:MessageCreate,current_user=Depen
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     ensure_party(c,current_user)
     if not c.get('chatEnabled',False): raise HTTPException(status_code=403,detail='Chat not enabled. Complete payment first.')
-    blocked=check_blocked_content(message.content); now=datetime.now(timezone.utc).isoformat(); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'senderId':current_user['id'],'senderType':current_user['role'],'content':message.content if not blocked else '[Message blocked - external contact not allowed]','blocked':blocked,'createdAt':now};
+    attachments=[a.model_dump() for a in (message.attachments or [])][:5]
+    if not message.content.strip() and not attachments: raise HTTPException(status_code=400,detail='Message is empty')
+    upload_base=os.environ.get('BACKEND_PUBLIC_URL','http://localhost:8000').rstrip('/')+'/uploads/'
+    if any(not a['url'].startswith(upload_base) for a in attachments): raise HTTPException(status_code=400,detail='Attachments must be uploaded to Orange first')
+    blocked=check_blocked_content(message.content); now=datetime.now(timezone.utc).isoformat(); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'senderId':current_user['id'],'senderType':current_user['role'],'content':message.content if not blocked else '[Message blocked - external contact not allowed]','blocked':blocked,'attachments':attachments,'createdAt':now};
     if blocked: await db.bypass_attempts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'userId':current_user['id'],'content':message.content,'createdAt':now})
     await db.messages.insert_one(doc); return MessageResponse(**doc)
 

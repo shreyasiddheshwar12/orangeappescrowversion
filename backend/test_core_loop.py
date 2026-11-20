@@ -211,3 +211,19 @@ def test_simulated_payments_refused_in_production(client, monkeypatch):
     brand_token = signup(client, "brand@x.com", "business")
     info = client.get("/api/payments/provider", headers=auth(brand_token)).json()
     assert info["configured"] is False
+
+
+def test_chat_attachments_must_be_orange_uploads(client):
+    creator_token = signup(client, "creator@x.com", "creator")
+    brand_token = signup(client, "brand@x.com", "business")
+    creator = make_creator(client, creator_token)
+    client.post("/api/business/profile", headers=auth(brand_token), json={"brandName": "Cafe", "industry": "Food"})
+    camp = client.post("/api/campaigns/", headers=auth(brand_token), json={
+        "receiverId": creator["id"], "receiverType": "creator", "campaignType": "paid", "deliverables": "1 reel", "budget": 2000,
+    }).json()
+    run(server.db.campaigns.update_one({"id": camp["id"]}, {"$set": {"chatEnabled": True}}))
+    bad = client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "", "attachments": [{"url": "https://evil.example/x.png", "type": "image"}]})
+    assert bad.status_code == 400
+    ok = client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "Moodboard", "attachments": [{"url": "http://localhost:8000/uploads/abc.png", "type": "image", "name": "mood.png"}]})
+    assert ok.status_code == 201 and ok.json()["attachments"][0]["name"] == "mood.png"
+    assert client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "   "}).status_code == 400

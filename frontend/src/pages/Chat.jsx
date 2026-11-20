@@ -1,14 +1,35 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Send, Loader2, Clock, Lock, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Lock, Paperclip, X, ExternalLink, ShieldAlert, Instagram, FileText } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
-import { Badge } from '../components/ui/badge';
-import { campaignAPI, messagesAPI, getErrorMessage } from '../lib/api';
+import StatusPill from '../components/orange/StatusPill';
+import { campaignAPI, messagesAPI, uploadAPI, getErrorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { STATUS_META, LIFECYCLE, TYPE_LABEL, counterpartName, counterpartInstagram, nextStep, amountFor } from '../lib/collaborations';
+import { formatINR, initials } from '../lib/format';
 import { toast } from 'sonner';
+
+const POLL_MS = 5000;
+
+const dayLabel = (iso) => {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+};
+const timeLabel = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+
+const AttachmentView = ({ a, mine }) => {
+  if (a.type === 'image') return <a href={a.url} target="_blank" rel="noopener noreferrer"><img src={a.url} alt={a.name || ''} className="max-h-60 rounded-md object-cover" /></a>;
+  if (a.type === 'video') return <video src={a.url} controls className="max-h-60 rounded-md" />;
+  return (
+    <a href={a.url} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 text-sm underline-offset-2 hover:underline ${mine ? 'text-white' : 'text-ink'}`}>
+      <FileText className="h-4 w-4" />{a.name || 'Attachment'}
+    </a>
+  );
+};
 
 const Chat = () => {
   const { requestId } = useParams();
@@ -16,298 +37,213 @@ const Chat = () => {
   const { user } = useAuth();
   const [campaign, setCampaign] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [text, setText] = useState('');
+  const [pending, setPending] = useState([]);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const messagesEndRef = useRef(null);
+  const endRef = useRef(null);
+  const fileRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
-    const interval = setInterval(loadMessages, 5000);
-    return () => clearInterval(interval);
+  const loadMessages = useCallback(async () => {
+    try {
+      const res = await messagesAPI.getMessages(requestId);
+      setMessages(res.data);
+    } catch { /* polling: ignore transient errors */ }
   }, [requestId]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const loadData = async () => {
-    try {
-      const campaignRes = await campaignAPI.getById(requestId);
-      setCampaign(campaignRes.data);
-      
-      // Only load messages if chat is enabled
-      if (campaignRes.data.chatEnabled) {
-        const messagesRes = await messagesAPI.getMessages(requestId);
-        setMessages(messagesRes.data);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await campaignAPI.getById(requestId);
+        if (cancelled) return;
+        setCampaign(res.data);
+        if (res.data.chatEnabled) await loadMessages();
+      } catch (e) {
+        toast.error(getErrorMessage(e, 'Could not open this conversation'));
+        navigate(-1);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to load chat"));
-      navigate(-1);
-    } finally {
-      setLoading(false);
-    }
-  };
+    })();
+    return () => { cancelled = true; };
+  }, [requestId, loadMessages, navigate]);
 
-  const loadMessages = async () => {
-    if (!campaign?.chatEnabled) return;
+  // Poll only once chat is enabled; the effect re-runs when that changes.
+  useEffect(() => {
+    if (!campaign?.chatEnabled) return undefined;
+    const id = setInterval(loadMessages, POLL_MS);
+    return () => clearInterval(id);
+  }, [campaign?.chatEnabled, loadMessages]);
+
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
+
+  const onFiles = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
     try {
-      const response = await messagesAPI.getMessages(requestId);
-      setMessages(response.data);
-    } catch (error) {
-      // Silent fail for polling
+      const uploaded = await Promise.all([...files].slice(0, 5 - pending.length).map((f) => uploadAPI.uploadFile(f)));
+      setPending((p) => [...p, ...uploaded.map((r) => ({ url: r.data.url, type: r.data.type, name: r.data.filename, size: r.data.size }))]);
+    } catch (e) {
+      toast.error(getErrorMessage(e, 'Upload failed'));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleSend = async (e) => {
+  const send = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
-
+    if (!text.trim() && !pending.length) return;
     setSending(true);
     try {
-      const response = await messagesAPI.sendMessage(requestId, newMessage);
-      setMessages(prev => [...prev, response.data]);
-      setNewMessage('');
-      
-      // Check if message was blocked
-      if (response.data.blocked) {
-        toast.warning("Message blocked - external contact sharing is not allowed");
-      }
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Failed to send message"));
+      const res = await messagesAPI.sendMessage(requestId, text, pending);
+      setMessages((m) => [...m, res.data]);
+      setText('');
+      setPending([]);
+      if (res.data.blocked) toast.warning('That message was hidden: contact details are shared once identities unlock.');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Message not sent'));
     } finally {
       setSending(false);
     }
   };
 
-  const formatPrice = (price) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(price);
-  };
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
+  if (!campaign) return null;
 
-  const formatTime = (dateString) => {
-    return new Date(dateString).toLocaleTimeString('en-IN', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
+  const role = user?.role;
+  const step = nextStep(campaign, role, { incoming: campaign.receiverType === (role === 'business' ? 'brand' : 'creator') });
+  const name = counterpartName(campaign, role);
+  const handle = counterpartInstagram(campaign, role);
+  const stepIndex = STATUS_META[campaign.status]?.step ?? -1;
+  const dashboard = role === 'creator' ? '/dashboard/creator?view=collaborations' : '/dashboard/business?view=campaigns';
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === today.toDateString()) return 'Today';
-    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen gradient-hero flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-10 h-10 mx-auto text-primary animate-spin mb-4" />
-          <p className="text-muted-foreground">Loading chat...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const isCreator = user?.role === 'creator';
-  const isBrand = user?.role === 'business';
-  const otherPartyName = isCreator ? campaign?.senderName : campaign?.receiverName;
-  const otherPartyInstagram = isCreator ? campaign?.senderInstagram : campaign?.receiverInstagram;
-  
-  // Check if chat is enabled (after payment)
-  if (!campaign?.chatEnabled) {
-    return (
-      <div className="h-screen flex flex-col bg-background">
-        <header className="border-b border-orange-100 bg-white/80 backdrop-blur-sm px-4 py-3">
-          <div className="max-w-4xl mx-auto flex items-center gap-4">
-            <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate(-1)}>
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h2 className="font-semibold">Chat</h2>
-          </div>
-        </header>
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center p-8">
-            <Lock className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-heading text-xl font-bold mb-2">Chat Not Available</h3>
-            <p className="text-muted-foreground">Chat will unlock after payment is completed.</p>
-            <Button onClick={() => navigate(-1)} className="mt-4 btn-primary">
-              Go Back
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  let lastDay = '';
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-orange-100 bg-white/80 backdrop-blur-sm px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center gap-4">
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate(-1)} data-testid="back-btn">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          
-          <Avatar className="w-10 h-10 border-2 border-orange-100">
-            <AvatarFallback className="bg-primary/10 text-primary">
-              {otherPartyName?.[0] || '?'}
-            </AvatarFallback>
-          </Avatar>
-          
-          <div className="flex-1">
-            <h2 className="font-semibold">{otherPartyName}</h2>
-            {campaign?.identityUnlocked && otherPartyInstagram && (
-              <p className="text-xs text-green-600">IG: {otherPartyInstagram}</p>
-            )}
-          </div>
-          
-          <div className="flex gap-2">
-            <Badge className={
-              campaign?.status === 'completed' ? 'bg-green-500 text-white' :
-              campaign?.status === 'paid' ? 'bg-purple-100 text-purple-800' :
-              campaign?.status === 'link_submitted' ? 'bg-orange-100 text-orange-800' :
-              'bg-gray-100 text-gray-800'
-            }>
-              {campaign?.status?.replace('_', ' ')}
-            </Badge>
-            {campaign?.identityUnlocked && (
-              <Badge className="bg-green-100 text-green-800">🔓 Identity Unlocked</Badge>
-            )}
-          </div>
+    <div className="flex h-screen flex-col bg-background">
+      <header className="flex items-center gap-3 border-b border-border bg-white/80 px-4 py-3 backdrop-blur sm:px-6">
+        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} aria-label="Back" data-testid="back-btn"><ArrowLeft /></Button>
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-peach text-sm font-semibold text-orange-800">{initials(name)}</div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold text-ink">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">{TYPE_LABEL[campaign.campaignType]} · {campaign.deliverables}</p>
         </div>
+        <StatusPill status={campaign.status} />
       </header>
 
-      {/* Campaign Details Card */}
-      <div className="bg-muted/30 border-b border-orange-100 px-4 py-3">
-        <div className="max-w-4xl mx-auto">
-          <div className="card-orange p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="capitalize font-semibold">{campaign?.campaignType?.replace('_', ' ')}</span>
-              {campaign?.campaignType === 'paid' && (
-                <span className="text-primary font-bold">{formatPrice(campaign?.budget)}</span>
-              )}
-            </div>
-            <p className="text-sm text-muted-foreground mb-2"><strong>Deliverables:</strong> {campaign?.deliverables}</p>
-            {campaign?.contentLink && (
-              <p className="text-sm text-blue-600">
-                <strong>Link:</strong> <a href={campaign.contentLink} target="_blank" rel="noopener noreferrer" className="underline">{campaign.contentLink}</a>
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Restriction Warning */}
-      {!campaign?.identityUnlocked && (
-        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2">
-          <div className="max-w-4xl mx-auto flex items-center gap-2 text-sm text-orange-800">
-            <AlertTriangle className="w-4 h-4" />
-            <span>External contact sharing (Instagram, phone, etc.) is blocked until identity unlock</span>
-          </div>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="max-w-4xl mx-auto space-y-4">
-          {messages.length === 0 ? (
-            <div className="text-center py-12">
-              <span className="text-5xl block mb-4">💬</span>
-              <p className="text-muted-foreground">No messages yet. Start the conversation!</p>
-            </div>
-          ) : (
-            messages.map((message, idx) => {
-              const isOwnMessage = message.senderId === user?.id;
-              const showDateHeader = idx === 0 || 
-                formatDate(messages[idx - 1].createdAt) !== formatDate(message.createdAt);
-              
-              return (
-                <div key={message.id}>
-                  {showDateHeader && (
-                    <div className="flex items-center justify-center my-4">
-                      <span className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground">
-                        {formatDate(message.createdAt)}
-                      </span>
-                    </div>
-                  )}
-                  
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`flex gap-2 max-w-[75%] ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
-                      {!isOwnMessage && (
-                        <Avatar className="w-8 h-8 border border-orange-100">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs">
-                            {otherPartyName?.[0] || '?'}
-                          </AvatarFallback>
-                        </Avatar>
-                      )}
-                      <div>
-                        <div className={`px-4 py-2 rounded-2xl ${
-                          message.blocked 
-                            ? 'bg-red-50 border border-red-200 text-red-800'
-                            : isOwnMessage 
-                              ? 'bg-primary text-white rounded-tr-none' 
-                              : 'bg-white border border-orange-100 rounded-tl-none'
-                        }`}>
-                          {message.blocked && (
-                            <div className="flex items-center gap-1 text-xs mb-1 text-red-600">
-                              <Lock className="w-3 h-3" />
-                              Blocked
-                            </div>
-                          )}
-                          <p className="text-sm">{message.content}</p>
-                        </div>
-                        <p className={`text-xs text-muted-foreground mt-1 ${isOwnMessage ? 'text-right' : ''}`}>
-                          {formatTime(message.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-
-      {/* Message Input */}
-      <div className="border-t border-orange-100 bg-white px-4 py-4">
-        <form onSubmit={handleSend} className="max-w-4xl mx-auto flex gap-3">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder={campaign?.identityUnlocked ? "Type your message..." : "Type your message (external contacts blocked)..."}
-            className="flex-1 input-orange"
-            disabled={sending}
-            data-testid="message-input"
-          />
-          <Button 
-            type="submit" 
-            className="btn-primary px-6" 
-            disabled={sending || !newMessage.trim()}
-            data-testid="send-message-btn"
-          >
-            {sending ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
+      <div className="flex min-h-0 flex-1">
+        {/* Conversation */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+            {!campaign.chatEnabled ? (
+              <div className="mx-auto mt-16 max-w-sm text-center">
+                <Lock className="mx-auto h-6 w-6 text-ink-300" />
+                <p className="mt-3 font-display text-xl">Chat opens after payment</p>
+                <p className="mt-1 text-sm text-muted-foreground">Once the brand pays, both sides can talk here and share files.</p>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="mx-auto mt-16 max-w-sm text-center">
+                <p className="font-display text-xl">Say hello</p>
+                <p className="mt-1 text-sm text-muted-foreground">Agree on the shoot date, share references and keep everything in one place.</p>
+              </div>
             ) : (
-              <Send className="w-5 h-5" />
+              <ol className="mx-auto max-w-2xl space-y-2">
+                {messages.map((m) => {
+                  const mine = m.senderId === user?.id;
+                  const day = dayLabel(m.createdAt);
+                  const showDay = day !== lastDay; lastDay = day;
+                  return (
+                    <li key={m.id}>
+                      {showDay && <p className="my-4 text-center text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{day}</p>}
+                      <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[78%] rounded-xl px-3.5 py-2 ${m.blocked ? 'bg-brick-50 text-brick-700 ring-1 ring-brick-100' : mine ? 'rounded-br-sm bg-ink text-white' : 'rounded-bl-sm bg-white text-ink ring-1 ring-border'}`}>
+                          {m.blocked && <ShieldAlert className="mb-1 h-4 w-4" />}
+                          {(m.attachments || []).length > 0 && <div className="mb-1.5 space-y-1.5">{m.attachments.map((a, i) => <AttachmentView key={i} a={a} mine={mine} />)}</div>}
+                          {m.content && <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{m.content}</p>}
+                          <p className={`mt-0.5 text-right text-[10px] ${mine ? 'text-white/60' : 'text-muted-foreground'}`}>{timeLabel(m.createdAt)}</p>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+                <div ref={endRef} />
+              </ol>
             )}
-          </Button>
-        </form>
+          </div>
+
+          {campaign.chatEnabled && (
+            <form onSubmit={send} className="border-t border-border bg-white px-4 py-3 sm:px-8">
+              {pending.length > 0 && (
+                <div className="mx-auto mb-2 flex max-w-2xl flex-wrap gap-2">
+                  {pending.map((a, i) => (
+                    <span key={a.url} className="flex items-center gap-1.5 rounded-full bg-stone px-2.5 py-1 text-xs">
+                      <Paperclip className="h-3 w-3" />{a.name || a.type}
+                      <button type="button" aria-label="Remove attachment" onClick={() => setPending((p) => p.filter((_, j) => j !== i))}><X className="h-3 w-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mx-auto flex max-w-2xl items-end gap-2">
+                <input ref={fileRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(e) => onFiles(e.target.files)} />
+                <Button type="button" variant="ghost" size="icon" onClick={() => fileRef.current?.click()} disabled={uploading || pending.length >= 5} aria-label="Attach files">
+                  {uploading ? <Loader2 className="animate-spin" /> : <Paperclip />}
+                </Button>
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) send(e); }}
+                  rows={1}
+                  placeholder="Write a message"
+                  className="max-h-40 min-h-[40px] flex-1 resize-none rounded-md border border-input bg-white px-3 py-2 text-[15px] focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/40"
+                  data-testid="message-input"
+                />
+                <Button type="submit" size="icon" disabled={sending || (!text.trim() && !pending.length)} aria-label="Send" data-testid="send-btn">
+                  {sending ? <Loader2 className="animate-spin" /> : <Send />}
+                </Button>
+              </div>
+            </form>
+          )}
+        </section>
+
+        {/* Campaign context */}
+        <aside className="hidden w-[320px] shrink-0 overflow-y-auto border-l border-border bg-[#FFFCF8] p-5 lg:block">
+          <p className="eyebrow">Collaboration</p>
+          {stepIndex >= 0 && (
+            <ol className="mt-3 space-y-2">
+              {LIFECYCLE.map((label, i) => (
+                <li key={label} className="flex items-center gap-2 text-sm">
+                  <span className={`h-2 w-2 rounded-full ${i < stepIndex ? 'bg-sage-400' : i === stepIndex ? 'bg-primary ring-4 ring-orange-100' : 'bg-stone ring-1 ring-border'}`} />
+                  <span className={i === stepIndex ? 'font-semibold text-ink' : i < stepIndex ? 'text-ink-500' : 'text-muted-foreground'}>{label}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+          <div className={`mt-5 rounded-lg border p-3 text-sm ${step.who === 'you' ? 'border-orange-200 bg-orange-50' : 'border-border bg-white'}`}>
+            <p className="eyebrow mb-1">{step.who === 'you' ? 'Your next step' : 'Next step'}</p>
+            <p className="font-medium">{step.label}</p>
+            {step.action && step.action !== 'rate' && (
+              <Button size="sm" className="mt-3 w-full" onClick={() => navigate(dashboard)}>Open in workspace</Button>
+            )}
+          </div>
+          <dl className="mt-5 space-y-3 text-sm">
+            <div><dt className="eyebrow">Value</dt><dd className="num mt-1 font-semibold">{formatINR(amountFor(campaign))}{campaign.campaignType === 'paid' ? ' held by Orange' : ' barter fee'}</dd></div>
+            <div><dt className="eyebrow">Deliverables</dt><dd className="mt-1">{campaign.deliverables}</dd></div>
+            {campaign.timeline && <div><dt className="eyebrow">Timeline</dt><dd className="mt-1">{campaign.timeline}</dd></div>}
+            {campaign.brief && <div><dt className="eyebrow">Brief</dt><dd className="mt-1 whitespace-pre-line">{campaign.brief}</dd></div>}
+            {campaign.contentLink && (
+              <div><dt className="eyebrow">Submitted content</dt>
+                <dd className="mt-1"><a href={campaign.contentLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 break-all font-medium text-orange-800 hover:underline"><ExternalLink className="h-3.5 w-3.5 shrink-0" />{campaign.contentLink}</a></dd>
+              </div>
+            )}
+            {campaign.identityUnlocked && handle && (
+              <div><dt className="eyebrow">Instagram</dt><dd className="mt-1 flex items-center gap-1.5"><Instagram className="h-3.5 w-3.5" />{handle}</dd></div>
+            )}
+          </dl>
+          <p className="mt-6 text-xs text-muted-foreground">Keep payments and agreements on Orange so both sides stay protected.</p>
+        </aside>
       </div>
     </div>
   );

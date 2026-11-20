@@ -175,7 +175,7 @@ export const campaignAPI = {
 };
 export const messagesAPI = {
   getMessages: (campaignId) => api.get(`/messages/${campaignId}`),
-  sendMessage: (campaignId, content) => api.post(`/messages/${campaignId}`, { content }),
+  sendMessage: (campaignId, content, attachments = []) => api.post(`/messages/${campaignId}`, { content, attachments }),
 };
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
