@@ -22,6 +22,7 @@ from jose import JWTError, jwt
 from orange.payments import get_provider, provider_status, PaymentError
 from orange import ledger
 from orange.growth.router import build_router as build_growth_router
+from orange.routes_growth_ops import build_router as build_ops_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -125,6 +126,7 @@ def mask_campaign_identity(c,current_user_id):
         if x.get('receiverUserId')!=current_user_id: x['receiverName']='Creator' if x.get('receiverType')=='creator' else 'Brand'
         x['senderInstagram']=None; x['receiverInstagram']=None
     return x
+def history(status:str)->dict: return {'statusHistory':{'status':status,'at':datetime.now(timezone.utc).isoformat()}}
 def ensure_party(c,u):
     if c['senderUserId']!=u['id'] and c['receiverUserId']!=u['id']: raise HTTPException(status_code=403,detail='Access denied')
 def brand_user_id(c): return c['senderUserId'] if c['senderType']=='business' else c['receiverUserId']
@@ -406,7 +408,7 @@ async def create_campaign(campaign:CampaignCreate,current_user=Depends(get_curre
         if product_value<=0: raise HTTPException(status_code=400,detail='Barter value must be greater than zero')
         barter_fee=round(product_value*BARTER_FEE_PERCENT/100,2)
     now=datetime.now(timezone.utc); sname=sender.get('brandName') if current_user['role']=='business' else sender.get('name'); rname=receiver.get('name') if campaign.receiverType=='creator' else receiver.get('brandName')
-    doc={'id':str(uuid.uuid4()),'senderId':sender['id'],'senderUserId':current_user['id'],'senderType':current_user['role'],'senderName':sname,'senderInstagram':sender.get('instagramUsername'),'receiverId':receiver['id'],'receiverUserId':receiver['userId'],'receiverType':campaign.receiverType,'receiverName':rname,'receiverInstagram':receiver.get('instagramUsername'),'campaignType':campaign.campaignType,'deliverables':campaign.deliverables,'budget':campaign.budget or 0,'productValue':product_value,'barterFee':barter_fee,'timeline':campaign.timeline or '','brief':campaign.brief or '','barterDetails':campaign.barterDetails or '','status':'requested','paymentStatus':'pending','escrowAmount':escrow,'platformCommission':commission,'creatorPayout':payout,'identityUnlocked':False,'chatEnabled':False,'contentLink':None,'linkVerified':False,'shippingDetails':None,'productReceived':False,'createdAt':now.isoformat(),'updatedAt':now.isoformat(),'expiresAt':(now+timedelta(hours=REQUEST_EXPIRY_HOURS)).isoformat()}
+    doc={'id':str(uuid.uuid4()),'senderId':sender['id'],'senderUserId':current_user['id'],'senderType':current_user['role'],'senderName':sname,'senderInstagram':sender.get('instagramUsername'),'receiverId':receiver['id'],'receiverUserId':receiver['userId'],'receiverType':campaign.receiverType,'receiverName':rname,'receiverInstagram':receiver.get('instagramUsername'),'campaignType':campaign.campaignType,'deliverables':campaign.deliverables,'budget':campaign.budget or 0,'productValue':product_value,'barterFee':barter_fee,'timeline':campaign.timeline or '','brief':campaign.brief or '','barterDetails':campaign.barterDetails or '','status':'requested','statusHistory':[{'status':'requested','at':now.isoformat()}],'paymentStatus':'pending','escrowAmount':escrow,'platformCommission':commission,'creatorPayout':payout,'identityUnlocked':False,'chatEnabled':False,'contentLink':None,'linkVerified':False,'shippingDetails':None,'productReceived':False,'createdAt':now.isoformat(),'updatedAt':now.isoformat(),'expiresAt':(now+timedelta(hours=REQUEST_EXPIRY_HOURS)).isoformat()}
     await db.campaigns.insert_one(doc); return CampaignResponse(**mask_campaign_identity(doc,current_user['id']))
 @campaign_router.get('/incoming',response_model=List[CampaignResponse])
 async def incoming(current_user=Depends(get_current_user)):
@@ -425,7 +427,7 @@ async def respond(campaign_id:str,action:Literal['accept','reject']=Query(...),c
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if c['receiverUserId']!=current_user['id']: raise HTTPException(status_code=403,detail='Only receiver can respond')
     if c['status']!='requested': raise HTTPException(status_code=400,detail='Campaign already responded to')
-    new='accepted' if action=='accept' else 'cancelled'; await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':new,'updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'status':new,'message':'Request accepted. Brand can now pay.' if action=='accept' else 'Request rejected.'}
+    new='accepted' if action=='accept' else 'cancelled'; await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':new,'updatedAt':datetime.now(timezone.utc).isoformat()},'$push':history(new)}); return {'status':new,'message':'Request accepted. Brand can now pay.' if action=='accept' else 'Request rejected.'}
 
 def payment_http_error(exc:PaymentError)->HTTPException: return HTTPException(status_code=exc.status_code,detail=str(exc))
 def active_provider(name:Optional[str]=None):
@@ -466,7 +468,7 @@ async def settle_simulated_order(order_id:str,current_user=Depends(get_current_u
 async def finalize_verified_payment(c,payment_record,razorpay_payment_id):
     now=datetime.now(timezone.utc).isoformat(); identity=c['campaignType']=='paid'; mode=payment_record.get('mode','razorpay')
     await db.payments.update_one({'id':payment_record['id']},{'$set':{'status':'paid','razorpayPaymentId':razorpay_payment_id,'providerPaymentId':razorpay_payment_id,'signatureVerified':True,'paidAt':now,'updatedAt':now}})
-    await db.campaigns.update_one({'id':c['id']},{'$set':{'status':'paid','paymentStatus':'paid','identityUnlocked':identity,'chatEnabled':True,'razorpayPaymentId':razorpay_payment_id,'paymentProvider':mode,'paymentVerifiedAt':now,'updatedAt':now}})
+    await db.campaigns.update_one({'id':c['id']},{'$set':{'status':'paid','paymentStatus':'paid','identityUnlocked':identity,'chatEnabled':True,'razorpayPaymentId':razorpay_payment_id,'paymentProvider':mode,'paymentVerifiedAt':now,'updatedAt':now},'$push':history('paid')})
     if identity:
         await ledger.record(db,campaign_id=c['id'],entry_type='funded',amount=payment_record['amount'],provider=mode,payment_id=razorpay_payment_id,meta={'heldFor':'creator payout'})
     else:
@@ -523,14 +525,14 @@ async def shipping(campaign_id:str,shippingDetails:str=Query(...),current_user=D
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can add shipping details')
     if c['status'] not in ('paid','in_progress'): raise HTTPException(status_code=400,detail='Shipping can be added after payment')
-    await db.campaigns.update_one({'id':campaign_id},{'$set':{'shippingDetails':shippingDetails,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'Shipping details added'}
+    await db.campaigns.update_one({'id':campaign_id},{'$set':{'shippingDetails':shippingDetails,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()},'$push':history('in_progress')}); return {'success':True,'message':'Shipping details added'}
 @campaign_router.post('/{campaign_id}/product-received')
 async def product_received(campaign_id:str,current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if creator_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the creator can confirm receipt')
     if c['status'] not in ('paid','in_progress'): raise HTTPException(status_code=400,detail='Receipt can be confirmed after payment')
-    await db.campaigns.update_one({'id':campaign_id},{'$set':{'productReceived':True,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'Product receipt confirmed'}
+    await db.campaigns.update_one({'id':campaign_id},{'$set':{'productReceived':True,'status':'in_progress','updatedAt':datetime.now(timezone.utc).isoformat()},'$push':history('in_progress')}); return {'success':True,'message':'Product receipt confirmed'}
 @campaign_router.post('/{campaign_id}/submit-link')
 async def submit_link(campaign_id:str,contentLink:str=Query(...),current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
@@ -538,7 +540,7 @@ async def submit_link(campaign_id:str,contentLink:str=Query(...),current_user=De
     if current_user['id']!=creator_user_id(c): raise HTTPException(status_code=403,detail='Only the creator can submit content')
     if c['status'] not in ['paid','in_progress']: raise HTTPException(status_code=400,detail='Campaign must be paid/in progress')
     if not re.match(r'^https?://',contentLink): raise HTTPException(status_code=400,detail='Please submit a valid URL')
-    await db.campaigns.update_one({'id':campaign_id},{'$set':{'contentLink':contentLink,'status':'link_submitted','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'Content link submitted for verification','contentLink':contentLink}
+    await db.campaigns.update_one({'id':campaign_id},{'$set':{'contentLink':contentLink,'status':'link_submitted','updatedAt':datetime.now(timezone.utc).isoformat()},'$push':history('link_submitted')}); return {'success':True,'message':'Content link submitted for verification','contentLink':contentLink}
 @campaign_router.post('/{campaign_id}/verify-link')
 async def verify_link(campaign_id:str,current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
@@ -548,7 +550,7 @@ async def verify_link(campaign_id:str,current_user=Depends(get_current_user)):
     update={'linkVerified':True,'status':'link_verified','updatedAt':datetime.now(timezone.utc).isoformat()}; response={'success':True,'message':'Link verified!','status':'link_verified','linkVerified':True,'identityUnlocked':c.get('identityUnlocked',False)}
     if c['campaignType'] in ['barter_product','barter_service'] and not c.get('identityUnlocked',False):
         update['identityUnlocked']=True; sc,rc=identity_and_instagram(c); sp=await db[sc].find_one({'id':c['senderId']},{'_id':0}); rp=await db[rc].find_one({'id':c['receiverId']},{'_id':0}); response['identityUnlocked']=True; response['senderInstagram']=sp.get('instagramUsername') if sp else None; response['receiverInstagram']=rp.get('instagramUsername') if rp else None; response['message']='Link verified! Identity unlocked.'
-    await db.campaigns.update_one({'id':campaign_id},{'$set':update}); return response
+    await db.campaigns.update_one({'id':campaign_id},{'$set':update,'$push':history('link_verified')}); return response
 
 async def release_escrow(c):
     if c['campaignType']!='paid': return {'released':False,'amount':0,'reason':'not_applicable'}
@@ -569,7 +571,7 @@ async def complete(campaign_id:str,current_user=Depends(get_current_user)):
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can complete')
     if c['status']!='link_verified': raise HTTPException(status_code=400,detail='Link must be verified before completion')
-    result=await release_escrow(c); now=datetime.now(timezone.utc).isoformat(); await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'completed','payoutStatus':'released' if result['released'] else 'pending','updatedAt':now}})
+    result=await release_escrow(c); now=datetime.now(timezone.utc).isoformat(); await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'completed','payoutStatus':'released' if result['released'] else 'pending','updatedAt':now},'$push':history('completed')})
     mode=c.get('paymentProvider','razorpay')
     if result['released']: await db.payouts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'creatorUserId':creator_user_id(c),'amount':result['amount'],'status':'released','transferId':result.get('transferId'),'provider':mode,'createdAt':now})
     if c['campaignType']=='paid':
@@ -588,7 +590,7 @@ async def rate(campaign_id:str,rating:int=Query(...,ge=1,le=5),feedback:str=Quer
 async def report(campaign_id:str,reason:str=Query(...),current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
-    ensure_party(c,current_user); await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'disputed','updatedAt':datetime.now(timezone.utc).isoformat()}}); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'reporterId':current_user['id'],'reason':reason,'status':'pending','createdAt':datetime.now(timezone.utc).isoformat()}; await db.reports.insert_one(doc); return {'success':True,'reportId':doc['id'],'message':'Report submitted. Admin will review.'}
+    ensure_party(c,current_user); await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'disputed','updatedAt':datetime.now(timezone.utc).isoformat()},'$push':history('disputed')}); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'reporterId':current_user['id'],'reason':reason,'status':'pending','createdAt':datetime.now(timezone.utc).isoformat()}; await db.reports.insert_one(doc); return {'success':True,'reportId':doc['id'],'message':'Report submitted. Admin will review.'}
 
 @message_router.get('/{campaign_id}',response_model=List[MessageResponse])
 async def messages_get(campaign_id:str,current_user=Depends(get_current_user)):
@@ -639,7 +641,8 @@ async def blacklist(user_id:str,reason:str=Query(...),current_user=Depends(get_c
 
 async def growth_create_request(payload:dict,user:dict)->dict: return (await create_campaign(CampaignCreate(**payload),current_user=user)).model_dump()
 growth_router=build_growth_router(lambda: db,get_current_user,growth_create_request)
-api_router.include_router(growth_router); api_router.include_router(auth_router); api_router.include_router(creator_router); api_router.include_router(business_router); api_router.include_router(marketplace_router); api_router.include_router(campaign_router); api_router.include_router(payment_router); api_router.include_router(message_router); api_router.include_router(admin_router)
+ops_router=build_ops_router(get_db=lambda: db,get_current_user=get_current_user,ensure_party=ensure_party,brand_user_id=brand_user_id,creator_user_id=creator_user_id,create_request=growth_create_request,backend_url=lambda: os.environ.get('BACKEND_PUBLIC_URL','http://localhost:8000'),frontend_url=lambda: FRONTEND_URL)
+api_router.include_router(ops_router); api_router.include_router(growth_router); api_router.include_router(auth_router); api_router.include_router(creator_router); api_router.include_router(business_router); api_router.include_router(marketplace_router); api_router.include_router(campaign_router); api_router.include_router(payment_router); api_router.include_router(message_router); api_router.include_router(admin_router)
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware,allow_origins=CORS_ORIGINS,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 @app.on_event('startup')
@@ -650,6 +653,7 @@ async def startup():
         await db.campaigns.create_index('id',unique=True); await db.campaigns.create_index('senderUserId'); await db.campaigns.create_index('receiverUserId')
         await db.messages.create_index([('campaignId',1),('createdAt',1)]); await db.ratings.create_index('targetId'); await db.payments.create_index('razorpayOrderId')
         await db.agent_runs.create_index([('brandUserId',1),('createdAt',-1)]); await db.agent_steps.create_index([('runId',1),('order',1)]); await db.campaigns.create_index('growthCampaignId',sparse=True)
+        await db.tracking_links.create_index('slug',unique=True); await db.tracking_links.create_index('couponCode',unique=True); await db.tracking_links.create_index('campaignId'); await db.attribution_events.create_index([('trackingId',1),('type',1)]); await db.saved_creators.create_index([('brandUserId',1),('creatorProfileId',1)],unique=True); await db.ledger_entries.create_index('campaignId')
     except Exception as exc: logger.warning('Index creation skipped: %s',exc)
     logger.info('Orange API started')
 @app.on_event('shutdown')
