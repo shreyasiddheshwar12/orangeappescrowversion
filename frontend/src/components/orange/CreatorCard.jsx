@@ -1,4 +1,4 @@
-import { MapPin, Star, Users } from 'lucide-react';
+import { MapPin, Star, Users, Heart } from 'lucide-react';
 import { Button } from '../ui/button';
 import { formatINR, formatCount } from '../../lib/format';
 
@@ -7,12 +7,17 @@ const NICHE_TINT = {
   Fitness: 'from-sage-100 to-sage-50', Travel: 'from-[#DCE7EE] to-[#EEF3F6]', Lifestyle: 'from-amber-100 to-amber-50',
 };
 
-const CreatorCard = ({ creator, onView, onPropose, children }) => {
+const CreatorCard = ({ creator, onView, onPropose, saved, onToggleSave, children }) => {
   const tint = NICHE_TINT[creator.niche] || 'from-stone to-ivory';
   return (
     <article className="surface group flex flex-col overflow-hidden transition-shadow duration-200 hover:shadow-lift" data-testid={`creator-card-${creator.id}`}>
       <div className={`relative h-16 bg-gradient-to-br sm:h-24 ${tint}`}>
         <span className="absolute left-4 top-4 rounded-full bg-white/80 px-2.5 py-0.5 text-xs font-medium text-ink backdrop-blur">{creator.niche || 'Creator'}</span>
+        {onToggleSave && (
+          <button onClick={() => onToggleSave(creator)} aria-pressed={!!saved} aria-label={saved ? 'Remove from my creators' : 'Save to my creators'} className="absolute bottom-3 right-4 rounded-full bg-white/90 p-1.5 text-ink-500 shadow-card hover:text-orange-700" data-testid={`save-${creator.id}`}>
+            <Heart className={`h-4 w-4 ${saved ? 'fill-orange-600 text-orange-600' : ''}`} />
+          </button>
+        )}
         {creator.matchScore != null && (
           <span className="num absolute right-4 top-4 rounded-full bg-ink px-2.5 py-0.5 text-xs font-semibold text-white">{creator.matchScore}% match</span>
         )}

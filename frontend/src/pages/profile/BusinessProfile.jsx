@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '../../components/ui/avatar';
 import { marketplaceAPI, getErrorMessage } from '../../lib/api';
+import TrustScore from '../../components/orange/TrustScore';
 
 const BusinessProfile = () => {
   const { id } = useParams();
@@ -72,6 +73,8 @@ const BusinessProfile = () => {
             </div>
           </div>
         </section>
+
+        <TrustScore kind="brand" profileId={brand.id} />
 
         <section className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <Stat label="Rating from creators" value={brand.rating ? `${brand.rating.toFixed(1)} / 5` : 'No ratings yet'} />

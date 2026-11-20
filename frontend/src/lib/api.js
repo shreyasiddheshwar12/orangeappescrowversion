@@ -196,5 +196,22 @@ export const growthAPI = {
   approve: (id, data) => api.post(`/growth/runs/${id}/approve`, data),
   dismiss: (id) => api.post(`/growth/runs/${id}/cancel`),
 };
+export const trackingAPI = {
+  get: (campaignId) => api.get(`/campaigns/${campaignId}/tracking`),
+  setOffer: (campaignId, offer) => api.patch(`/campaigns/${campaignId}/tracking`, { offer }),
+  redeem: (code, amount) => api.post('/tracking/redeem', { code, amount: amount || undefined }),
+  offer: (slug) => api.get(`/offers/${slug}`),
+};
+export const trustAPI = {
+  creator: (profileId) => api.get(`/trust/creator/${profileId}`),
+  brand: (profileId) => api.get(`/trust/brand/${profileId}`),
+};
+export const crmAPI = {
+  list: () => api.get('/business/creators'),
+  save: (creatorId) => api.post(`/business/saved/${creatorId}`),
+  unsave: (creatorId) => api.delete(`/business/saved/${creatorId}`),
+  repeat: (campaignId) => api.post(`/campaigns/${campaignId}/repeat`),
+};
+export const ledgerAPI = { list: () => api.get('/payments/ledger') };
 export const requestsAPI = { respond: (id, action) => campaignAPI.respond(id, action) };
 export default api;

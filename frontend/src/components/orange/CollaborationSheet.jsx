@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import StatusPill from './StatusPill';
+import TrackingCard from './TrackingCard';
 import { STATUS_META, LIFECYCLE, TYPE_LABEL, counterpartName, counterpartInstagram, nextStep } from '../../lib/collaborations';
 import { formatINR } from '../../lib/format';
 
@@ -30,6 +31,8 @@ const Lifecycle = ({ status }) => {
     </ol>
   );
 };
+
+const TRACKABLE = ['accepted', 'payment_pending', 'paid', 'in_progress', 'link_submitted', 'link_verified', 'completed'];
 
 const CollaborationSheet = ({ collab, role, open, onOpenChange, actions, busy }) => {
   const navigate = useNavigate();
@@ -141,6 +144,8 @@ const CollaborationSheet = ({ collab, role, open, onOpenChange, actions, busy })
             )}
           </div>
 
+          {TRACKABLE.includes(collab.status) && <TrackingCard campaignId={collab.id} isBrand={role === 'business'} />}
+
           {/* Money */}
           <div className="surface px-4 py-2">
             {collab.campaignType === 'paid' ? (
@@ -148,7 +153,7 @@ const CollaborationSheet = ({ collab, role, open, onOpenChange, actions, busy })
                 <Row label="Budget">{formatINR(collab.budget)}</Row>
                 <Row label="Orange commission (10%)">{formatINR(collab.platformCommission)}</Row>
                 <Row label="Creator receives">{formatINR(collab.creatorPayout)}</Row>
-                <Row label="Payment">{collab.paymentStatus === 'paid' ? 'Held by Orange' : 'Not paid yet'}</Row>
+                <Row label="Payment">{collab.status === 'completed' ? 'Released' : collab.paymentStatus === 'paid' ? 'Held by Orange' : 'Not paid yet'}</Row>
                 {collab.payoutStatus && <Row label="Payout">{collab.payoutStatus === 'released' ? 'Released' : 'Pending creator payout setup'}</Row>}
               </>
             ) : (

@@ -73,7 +73,7 @@ export const nextStep = (c, role, { incoming } = {}) => {
         ? { who: 'you', label: c.campaignType === 'paid' ? 'Complete and release the payout' : 'Mark the collaboration complete', action: 'complete' }
         : { who: 'them', label: 'Waiting for the brand to complete' };
     case 'completed':
-      return { who: 'none', label: 'Completed', action: 'rate' };
+      return c.ratedByMe ? { who: 'none', label: 'Completed and rated' } : { who: 'none', label: 'Completed', action: 'rate' };
     case 'disputed':
       return { who: 'orange', label: 'Orange is reviewing this dispute' };
     default:

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..trust import creator_trust
+
 WEIGHTS = {"niche": 25, "location": 20, "price": 20, "trust": 15, "engagement": 10, "language": 5, "availability": 5}
 IN_FLIGHT = ["requested", "accepted", "payment_pending", "paid", "in_progress", "link_submitted", "link_verified"]
 TRUST_MIN_COMPLETED = 3
@@ -73,11 +75,10 @@ def price_factor(creator: dict, campaign_type: str, budget_per_creator: Optional
     return 0.0, f"Reel price ₹{price:,.0f} is well over the ₹{budget_per_creator:,.0f} budget."
 
 
-def trust_factor(creator: dict, completed: int):
-    rating = creator.get("rating")
-    if completed < TRUST_MIN_COMPLETED or rating is None:
-        return None, f"New on Orange ({completed} completed), so there's no track record to score yet."
-    return max(0.0, min(1.0, rating / 5)), f"Rated {rating:.1f}/5 across {completed} completed collaborations."
+def trust_factor(creator: dict, completed: int, trust_score: Optional[int] = None):
+    if trust_score is None:
+        return None, f"New on Orange ({completed} completed), so there's no TrustScore yet."
+    return trust_score / 100, f"TrustScore {trust_score} from {completed} completed collaborations."
 
 
 def engagement_factor(creator: dict):
@@ -103,12 +104,12 @@ def availability_factor(active: int):
     return 0.2, f"Busy with {active} collaborations in progress."
 
 
-def score_creator(creator: dict, brief: dict, *, completed: int = 0, active: int = 0) -> dict:
+def score_creator(creator: dict, brief: dict, *, completed: int = 0, active: int = 0, trust_score: Optional[int] = None) -> dict:
     factors = {
         "niche": niche_factor(creator, brief.get("niches") or []),
         "location": location_factor(creator, brief.get("location") or ""),
         "price": price_factor(creator, brief.get("campaignType") or "paid", brief.get("budgetPerCreator")),
-        "trust": trust_factor(creator, completed),
+        "trust": trust_factor(creator, completed, trust_score),
         "engagement": engagement_factor(creator),
         "language": language_factor(creator, brief.get("language")),
         "availability": availability_factor(active),
@@ -133,7 +134,8 @@ async def rank_creators(db, brief: dict, *, limit: int = 8) -> list[dict]:
         party = {"$or": [{"senderUserId": uid}, {"receiverUserId": uid}]}
         completed = await db.campaigns.count_documents({**party, "status": "completed"})
         active = await db.campaigns.count_documents({**party, "status": {"$in": IN_FLIGHT}})
-        s = score_creator(c, brief, completed=completed, active=active)
+        ts = (await creator_trust(db, uid))["score"] if completed >= TRUST_MIN_COMPLETED else None
+        s = score_creator(c, brief, completed=completed, active=active, trust_score=ts)
         niche_value = next(b["value"] for b in s["breakdown"] if b["factor"] == "niche")
         if niche_value == 0.0:
             continue  # wrong niche entirely: never recommend

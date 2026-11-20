@@ -5,6 +5,7 @@ import { LogoMark } from './components/orange/Logo';
 
 // Pages
 import Landing from './pages/Landing';
+import Offer from './pages/Offer';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import CreatorOnboarding from './pages/onboarding/CreatorOnboarding';
@@ -68,6 +69,7 @@ function AppRoutes() {
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<Landing />} />
+      <Route path="/o/:slug" element={<Offer />} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/signup" element={<PublicRoute><Signup /></PublicRoute>} />
       <Route path="/instagram/callback" element={<ProtectedRoute><InstagramCallback /></ProtectedRoute>} />

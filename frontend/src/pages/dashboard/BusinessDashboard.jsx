@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Home, Search, Layers, Loader2, Inbox, Users, Wallet, Sparkles, ArrowRight, Pencil, SlidersHorizontal } from 'lucide-react';
+import { Heart, Receipt, Home, Search, Layers, Loader2, Inbox, Users, Wallet, Sparkles, ArrowRight, Pencil, SlidersHorizontal } from 'lucide-react';
 import AppShell from '../../components/orange/AppShell';
 import PageHeader from '../../components/orange/PageHeader';
 import StatTile from '../../components/orange/StatTile';
@@ -11,17 +11,20 @@ import CollaborationSheet from '../../components/orange/CollaborationSheet';
 import CreatorCard from '../../components/orange/CreatorCard';
 import RequestDialog from '../../components/orange/RequestDialog';
 import GrowthAssistant from '../../components/orange/GrowthAssistant';
+import MyCreators from '../../components/orange/MyCreators';
+import PaymentsView from '../../components/orange/PaymentsView';
+import RedeemCard from '../../components/orange/RedeemCard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Switch } from '../../components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { businessAPI, marketplaceAPI } from '../../lib/api';
+import { businessAPI, marketplaceAPI, crmAPI } from '../../lib/api';
 import useCollaborations from '../../hooks/useCollaborations';
 import { ACTIVE_STATES, IN_FLIGHT_STATES, nextStep } from '../../lib/collaborations';
 import { formatINR, greeting } from '../../lib/format';
 
 const NICHES = ['All', 'Food', 'Lifestyle', 'Fashion', 'Beauty', 'Fitness', 'Travel', 'Tech', 'Gaming', 'Comedy', 'Education', 'Music', 'Art', 'Sports', 'Health', 'Finance'];
-const VIEWS = ['home', 'growth', 'discover', 'campaigns'];
+const VIEWS = ['home', 'growth', 'discover', 'campaigns', 'creators', 'payments'];
 
 const BusinessDashboard = () => {
   const navigate = useNavigate();
@@ -37,8 +40,19 @@ const BusinessDashboard = () => {
   const [proposeTo, setProposeTo] = useState(null);
   const [openCollab, setOpenCollab] = useState(null);
   const [campaignFilter, setCampaignFilter] = useState('active');
+  const [savedIds, setSavedIds] = useState(new Set());
 
-  const { all, loading, busy, actions } = useCollaborations();
+  useEffect(() => {
+    crmAPI.list().then((res) => setSavedIds(new Set(res.data.filter((c) => c.saved).map((c) => c.creatorId)))).catch(() => {});
+  }, []);
+
+  const toggleSave = async (creator) => {
+    const on = savedIds.has(creator.id);
+    setSavedIds((prev) => { const next = new Set(prev); if (on) next.delete(creator.id); else next.add(creator.id); return next; });
+    await (on ? crmAPI.unsave(creator.id) : crmAPI.save(creator.id)).catch(() => {});
+  };
+
+  const { all, loading, busy, actions, refresh } = useCollaborations();
 
   useEffect(() => {
     businessAPI.getProfile()
@@ -93,6 +107,8 @@ const BusinessDashboard = () => {
     { key: 'growth', label: 'Growth Assistant', icon: Sparkles },
     { key: 'discover', label: 'Find creators', icon: Search },
     { key: 'campaigns', label: 'Collaborations', icon: Layers, badge: pendingIncoming },
+    { key: 'creators', label: 'My creators', icon: Heart },
+    { key: 'payments', label: 'Payments', icon: Receipt },
   ];
 
   if (profileLoading) {
@@ -145,6 +161,8 @@ const BusinessDashboard = () => {
             </div>
           </div>
 
+          <RedeemCard />
+
           <Section title="Needs your attention" description="Payments, content to review and requests to answer">
             {loading ? <SkeletonRows /> : attention.length ? (
               <div className="surface overflow-hidden">{attention.map((c) => <CollaborationRow key={c.id} collab={c} role="business" onOpen={setOpenCollab} />)}</div>
@@ -156,7 +174,7 @@ const BusinessDashboard = () => {
           <Section title="Creators to explore" description="Verified creators on Orange" action={<Button variant="ghost" size="sm" onClick={() => setView('discover')}>See all<ArrowRight /></Button>}>
             {creatorsLoading ? <SkeletonCards /> : creators.length ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {[...creators].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 3).map((c) => <CreatorCard key={c.id} creator={c} onView={viewCreator} onPropose={propose} />)}
+                {[...creators].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 3).map((c) => <CreatorCard key={c.id} creator={c} onView={viewCreator} onPropose={propose} saved={savedIds.has(c.id)} onToggleSave={toggleSave} />)}
               </div>
             ) : <EmptyState compact icon={Users} title="No verified creators yet" body="Creators appear here once they connect Instagram." />}
           </Section>
@@ -173,6 +191,20 @@ const BusinessDashboard = () => {
         <div className="space-y-8 animate-fade-in">
           <PageHeader eyebrow="Growth Assistant" title="Plan a campaign" description="Five specialists read your business, plan the campaign and shortlist creators. You approve before anything is sent." />
           <GrowthAssistant onOpenCollaborations={() => setView('campaigns')} />
+        </div>
+      )}
+
+      {view === 'creators' && (
+        <div className="space-y-8 animate-fade-in">
+          <PageHeader eyebrow="CRM" title="My creators" description="Creators you saved or worked with. Rebook the ones that worked in one click." />
+          <MyCreators onRepeated={refresh} onFind={() => setView('discover')} />
+        </div>
+      )}
+
+      {view === 'payments' && (
+        <div className="space-y-8 animate-fade-in">
+          <PageHeader eyebrow="Orange Trust" title="Payments" description="Every payment, fee and refund on your account." />
+          <PaymentsView />
         </div>
       )}
 
@@ -196,7 +228,7 @@ const BusinessDashboard = () => {
             <>
               <p className="text-sm text-muted-foreground">{creators.length} {creators.length === 1 ? 'creator' : 'creators'}</p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {creators.map((c) => <CreatorCard key={c.id} creator={c} onView={viewCreator} onPropose={propose} />)}
+                {creators.map((c) => <CreatorCard key={c.id} creator={c} onView={viewCreator} onPropose={propose} saved={savedIds.has(c.id)} onToggleSave={toggleSave} />)}
               </div>
             </>
           ) : <EmptyState icon={Search} title="No creators match" body="Try another niche or a wider area." />}
