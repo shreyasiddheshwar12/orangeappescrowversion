@@ -27,6 +27,17 @@ const NICHES = [
   'Gaming', 'Entertainment', 'Education', 'Finance', 'Parenting'
 ];
 
+const OBJECTIVES = ['More walk-ins', 'Launch something new', 'Brand awareness', 'Online orders', 'Bookings and enquiries', 'Grow followers'];
+const BUDGETS = [5000, 10000, 15000, 25000, 50000];
+const VOICES = ['Warm', 'Playful', 'Premium', 'Bold', 'Minimal', 'Youthful', 'Traditional'];
+
+const ChoiceChip = ({ selected, onClick, children }) => (
+  <button type="button" onClick={onClick} aria-pressed={selected}
+    className={`rounded-full px-3.5 py-1.5 text-sm transition-colors ${selected ? 'bg-ink text-white' : 'bg-white text-ink ring-1 ring-border hover:bg-stone'}`}>
+    {children}
+  </button>
+);
+
 const BusinessOnboarding = () => {
   const navigate = useNavigate();
   const { updateUser } = useAuth();
@@ -49,11 +60,19 @@ const BusinessOnboarding = () => {
     budgetRange: '',
     preferredNiches: [],
     isOpenToBarter: false,
-    pastCollaborations: [] // New: Array of past collab objects
+    pastCollaborations: [],
+    targetAudience: '',
+    objectives: [],
+    monthlyBudget: '',
+    brandVoice: [],
+    products: ''
   });
+  const [isEditing, setIsEditing] = useState(false);
 
-  const totalSteps = 4; // Increased to 4 steps
+  const totalSteps = 5;
   const progress = (step / totalSteps) * 100;
+
+  const toggleList = (field, value) => setFormData((prev) => ({ ...prev, [field]: prev[field].includes(value) ? prev[field].filter((x) => x !== value) : [...prev[field], value] }));
 
   const updateField = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -161,6 +180,31 @@ const BusinessOnboarding = () => {
     }));
   };
 
+  // Editing an existing profile: start from what is saved instead of a blank form.
+  useEffect(() => {
+    businessAPI.getProfile().then(({ data }) => {
+      setIsEditing(true);
+      setFormData((prev) => ({
+        ...prev,
+        brandName: data.brandName || '',
+        category: data.industry || '',
+        bio: data.bio || '',
+        location: data.location || '',
+        websiteUrl: data.websiteUrl || '',
+        profilePhotoUrl: data.profilePhotoUrl || '',
+        budgetRange: data.budgetRange || '',
+        preferredNiches: data.preferredNiches || [],
+        isOpenToBarter: !!data.barterEnabled,
+        pastCollaborations: data.pastCollaborations || [],
+        targetAudience: data.targetAudience || '',
+        objectives: data.objectives || [],
+        monthlyBudget: data.monthlyBudget ? String(data.monthlyBudget) : '',
+        brandVoice: data.brandVoice || [],
+        products: data.products || '',
+      }));
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     instagramAPI.status().then(({ data }) => {
       if (!data.connected) return;
@@ -198,11 +242,17 @@ const BusinessOnboarding = () => {
         preferredNiches: formData.preferredNiches,
         isOpenToBarter: formData.isOpenToBarter,
         profilePhotoUrl: formData.profilePhotoUrl,
-        pastCollaborations: formData.pastCollaborations.filter(c => c.campaignName) // Only send non-empty
+        pastCollaborations: formData.pastCollaborations.filter(c => c.campaignName),
+        targetAudience: formData.targetAudience,
+        objectives: formData.objectives,
+        monthlyBudget: parseFloat(formData.monthlyBudget) || null,
+        brandVoice: formData.brandVoice,
+        products: formData.products,
+        websiteUrl: formData.websiteUrl
       };
       await businessAPI.createProfile(profileData);
       updateUser({ hasCompletedOnboarding: true });
-      toast.success("Brand profile ready! Let's find your next favorite creator 🤝");
+      toast.success(isEditing ? "Profile updated" : "Your brand profile is ready");
       navigate('/dashboard/business');
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to create profile"));
@@ -214,9 +264,10 @@ const BusinessOnboarding = () => {
   const canProceed = () => {
     switch (step) {
       case 1: return formData.brandName && formData.category;
-      case 2: return instagramVerified;
-      case 3: return true; // Past collabs optional
-      case 4: return true;
+      case 2: return formData.objectives.length > 0;
+      case 3: return true; // Instagram can be connected later
+      case 4: return true; // Past collabs optional
+      case 5: return true;
       default: return false;
     }
   };
@@ -231,10 +282,9 @@ const BusinessOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">🤝</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Let's find your next favorite creator collab</h2>
-              <p className="text-muted-foreground">Good brands advertise. Great brands collaborate.</p>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Tell us about your business</h2>
+              <p className="text-muted-foreground">A few basics so creators know who they're working with.</p>
             </div>
 
             <div className="space-y-4">
@@ -306,21 +356,69 @@ const BusinessOnboarding = () => {
 
       case 2:
         return (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
+            <div className="mb-6">
+              <p className="eyebrow mb-2">Your goals</p>
+              <h2 className="display text-3xl">What should Orange help you achieve?</h2>
+              <p className="mt-2 text-muted-foreground">This is what the Growth Assistant plans around. You can change it any time.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Goals</Label>
+              <div className="flex flex-wrap gap-2">
+                {OBJECTIVES.map((o) => (
+                  <ChoiceChip key={o} selected={formData.objectives.includes(o)} onClick={() => toggleList('objectives', o)}>{o}</ChoiceChip>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="audience">Who are your customers?</Label>
+              <Textarea id="audience" value={formData.targetAudience} onChange={(e) => updateField('targetAudience', e.target.value)} placeholder="College students and young professionals within 3 km, mostly 18 to 28" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="products">What do you sell?</Label>
+              <Input id="products" value={formData.products} onChange={(e) => updateField('products', e.target.value)} placeholder="Specialty coffee, cold brew, all-day breakfast" />
+            </div>
+            <div className="space-y-2">
+              <Label>Monthly marketing budget</Label>
+              <div className="flex flex-wrap gap-2">
+                {BUDGETS.map((b) => (
+                  <ChoiceChip key={b} selected={formData.monthlyBudget === String(b)} onClick={() => updateField('monthlyBudget', String(b))}>₹{b.toLocaleString('en-IN')}</ChoiceChip>
+                ))}
+                <Input type="number" inputMode="numeric" className="w-36" placeholder="Other ₹" value={BUDGETS.map(String).includes(formData.monthlyBudget) ? '' : formData.monthlyBudget} onChange={(e) => updateField('monthlyBudget', e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Brand personality</Label>
+              <div className="flex flex-wrap gap-2">
+                {VOICES.map((v) => (
+                  <ChoiceChip key={v} selected={formData.brandVoice.includes(v)} onClick={() => toggleList('brandVoice', v)}>{v}</ChoiceChip>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="website">Website <span className="font-normal text-muted-foreground">(optional)</span></Label>
+              <Input id="website" value={formData.websiteUrl} onChange={(e) => updateField('websiteUrl', e.target.value)} placeholder="https://" />
+            </div>
+          </motion.div>
+        );
+
+      case 3:
+        return (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">📱</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Verify Your Instagram</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Verify Your Instagram</h2>
               <p className="text-muted-foreground">Connect your brand's Instagram to get verified</p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Account *</Label>
+                <Label htmlFor="instagram">Instagram account</Label>
+                <p className="text-xs text-muted-foreground">Optional for now. Verified brands get more replies from creators, and you can connect later from your profile.</p>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -385,7 +483,7 @@ const BusinessOnboarding = () => {
           </motion.div>
         );
 
-      case 3:
+      case 4:
         return (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
@@ -393,9 +491,8 @@ const BusinessOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">🤝</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Past Collaborations</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Past Collaborations</h2>
               <p className="text-muted-foreground">Share your influencer marketing history (optional)</p>
             </div>
 
@@ -475,7 +572,7 @@ const BusinessOnboarding = () => {
           </motion.div>
         );
 
-      case 4:
+      case 5:
         return (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
@@ -483,9 +580,8 @@ const BusinessOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">📸</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Brand Visuals</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Brand Visuals</h2>
               <p className="text-muted-foreground">Upload your logo & brand images</p>
             </div>
 
@@ -576,7 +672,7 @@ const BusinessOnboarding = () => {
   };
 
   return (
-    <div className="min-h-screen gradient-hero py-12 px-6">
+    <div className="min-h-screen gradient-hero py-10 px-4 sm:px-6">
       <div className="max-w-lg mx-auto">
         {/* Progress */}
         <div className="mb-8">
@@ -588,13 +684,13 @@ const BusinessOnboarding = () => {
         </div>
 
         {/* Card */}
-        <div className="card-orange p-8">
+        <div className="surface p-6 sm:p-8 shadow-card">
           <AnimatePresence mode="wait">
             {renderStep()}
           </AnimatePresence>
 
           {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-orange-100">
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
             {step > 1 ? (
               <Button
                 variant="ghost"

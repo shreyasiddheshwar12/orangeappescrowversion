@@ -68,6 +68,24 @@ const CreatorOnboarding = () => {
     }));
   };
 
+  // Editing an existing profile: start from what is saved instead of a blank form.
+  useEffect(() => {
+    creatorAPI.getProfile().then(({ data }) => {
+      const str = (v) => (v ? String(v) : '');
+      setFormData((prev) => ({
+        ...prev,
+        name: data.name || '',
+        bio: data.bio || '',
+        location: data.location || '',
+        niches: data.niches || [],
+        isOpenToBarter: !!data.barterEnabled,
+        profilePhotoUrl: data.profilePhotoUrl || '',
+        mediaGallery: data.mediaGallery || [],
+        rates: { reelPrice: str(data.reelPrice), storyPrice: str(data.storyPrice), postPrice: str(data.postPrice), bundlePrice: str(data.bundlePrice), carouselPrice: str(data.carouselPrice) },
+      }));
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     instagramAPI.status().then(({ data }) => {
       if (!data.connected) return;
@@ -174,6 +192,7 @@ const CreatorOnboarding = () => {
     try {
       const profileData = {
         ...formData,
+        barterEnabled: formData.isOpenToBarter,
         followersCount: parseInt(formData.followersCount) || 0,
         engagementRate: parseFloat(formData.engagementRate) || 0,
         rates: {
@@ -199,7 +218,7 @@ const CreatorOnboarding = () => {
   const canProceed = () => {
     switch (step) {
       case 1: return formData.name && formData.bio;
-      case 2: return instagramVerified && formData.niches.length > 0;
+      case 2: return formData.niches.length > 0; // Instagram can be connected later
       case 3: return true;
       case 4: return true;
       case 5: return true;
@@ -217,9 +236,8 @@ const CreatorOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">✨</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Let's make your Orange profile irresistible</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Let's make your Orange profile irresistible</h2>
               <p className="text-muted-foreground">Tell brands why your content hits different 💅</p>
             </div>
 
@@ -274,15 +292,15 @@ const CreatorOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">📱</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Verify Your Instagram</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Verify Your Instagram</h2>
               <p className="text-muted-foreground">Connect your Instagram to get verified & shown in marketplace</p>
             </div>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="instagram">Instagram Account *</Label>
+                <Label htmlFor="instagram">Instagram account</Label>
+                <p className="text-xs text-muted-foreground">Connect it to appear in brand discovery. You can finish setup now and connect later.</p>
                 <div className="relative">
                   <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -366,9 +384,8 @@ const CreatorOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">💰</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Set Your Rates</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Set Your Rates</h2>
               <p className="text-muted-foreground">Know your worth, king/queen 👑</p>
             </div>
 
@@ -460,9 +477,8 @@ const CreatorOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">📸</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Profile Photo</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Profile Photo</h2>
               <p className="text-muted-foreground">First impressions matter – make it count!</p>
             </div>
 
@@ -506,9 +522,8 @@ const CreatorOnboarding = () => {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="text-center mb-8">
-              <span className="text-5xl mb-4 block">🖼️</span>
-              <h2 className="font-heading text-2xl font-bold mb-2">Media Gallery</h2>
+            <div className="mb-6">
+              <h2 className="display text-3xl mb-2">Media Gallery</h2>
               <p className="text-muted-foreground">Show off your best work!</p>
             </div>
 
@@ -567,7 +582,7 @@ const CreatorOnboarding = () => {
   };
 
   return (
-    <div className="min-h-screen gradient-hero py-12 px-6">
+    <div className="min-h-screen gradient-hero py-10 px-4 sm:px-6">
       <div className="max-w-lg mx-auto">
         {/* Progress */}
         <div className="mb-8">
@@ -579,13 +594,13 @@ const CreatorOnboarding = () => {
         </div>
 
         {/* Card */}
-        <div className="card-orange p-8">
+        <div className="surface p-6 sm:p-8 shadow-card">
           <AnimatePresence mode="wait">
             {renderStep()}
           </AnimatePresence>
 
           {/* Navigation */}
-          <div className="flex items-center justify-between mt-8 pt-6 border-t border-orange-100">
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
             {step > 1 ? (
               <Button
                 variant="ghost"
