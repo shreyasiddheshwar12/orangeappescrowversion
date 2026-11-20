@@ -49,6 +49,12 @@ const loadRazorpayCheckout = () => new Promise((resolve, reject) => {
 const openRazorpayPayment = async (campaignId) => {
   const orderResponse = await api.post(`/payments/campaigns/${campaignId}/order`);
   const order = orderResponse.data;
+  if (order.checkout === 'simulated') {
+    // Development provider: no money moves. The backend settles the order and
+    // returns a signed result that goes through the same verification path.
+    const settled = await api.post(`/payments/simulated/${order.orderId}/settle`);
+    return api.post(`/payments/campaigns/${campaignId}/verify`, settled.data);
+  }
   const Razorpay = await loadRazorpayCheckout();
 
   return new Promise((resolve, reject) => {
@@ -133,6 +139,7 @@ export const marketplaceAPI = {
     if (filters.niche) params.append('niche', filters.niche);
     if (filters.language) params.append('language', filters.language);
     if (filters.contentType) params.append('contentType', filters.contentType);
+    if (filters.location) params.append('location', filters.location);
     if (filters.minPrice) params.append('minPrice', filters.minPrice);
     if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
     if (filters.barterOnly) params.append('barterOnly', filters.barterOnly);
@@ -168,7 +175,7 @@ export const campaignAPI = {
 };
 export const messagesAPI = {
   getMessages: (campaignId) => api.get(`/messages/${campaignId}`),
-  sendMessage: (campaignId, content) => api.post(`/messages/${campaignId}`, { content }),
+  sendMessage: (campaignId, content, attachments = []) => api.post(`/messages/${campaignId}`, { content, attachments }),
 };
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
@@ -177,6 +184,7 @@ export const adminAPI = {
 };
 export const seedAPI = { seed: () => api.post('/seed') };
 export const paymentsAPI = {
+  getProvider: () => api.get('/payments/provider'),
   createOrder: (campaignId) => campaignAPI.createPaymentOrder(campaignId),
   verifyPayment: (campaignId, data) => campaignAPI.verifyPayment(campaignId, data),
 };

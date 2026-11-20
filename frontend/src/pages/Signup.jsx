@@ -3,6 +3,7 @@ import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, ArrowLeft, Loader2, Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { LogoMark } from '../components/orange/Logo';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { useAuth } from '../lib/auth';
@@ -79,11 +80,9 @@ const Signup = () => {
         {/* Signup Card */}
         <div className="card-orange p-8">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">🍊</span>
-            </div>
-            <h1 className="font-heading text-3xl font-bold mb-2">Join Orange!</h1>
-            <p className="text-muted-foreground">Create your account and start vibing</p>
+            <LogoMark size={44} className="mx-auto mb-5" />
+            <h1 className="display text-3xl mb-2">Join Orange</h1>
+            <p className="text-muted-foreground">Create your account in under a minute</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -177,7 +176,7 @@ const Signup = () => {
                   Creating account...
                 </>
               ) : (
-                'Create Account 🍊'
+                'Create Account'
               )}
             </Button>
           </form>

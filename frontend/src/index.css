@@ -1,48 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-    margin: 0;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    background-color: #FFFBF7;
-    color: #2D241E;
-}
-
-h1, h2, h3, h4, h5, h6 {
-    font-family: 'Syne', sans-serif;
-}
-
-code {
-    font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
-}
-
+/*
+ * Orange design tokens.
+ * Tangerine is for actions, selection and focus only. Plum marks anything the
+ * AI is doing. Sage is success and money that has settled.
+ * White on tangerine fails contrast (2.7:1), so primary buttons use ink text.
+ */
 @layer base {
     :root {
-        --background: 30 100% 99%;
-        --foreground: 25 20% 15%;
+        --background: 30 100% 98%;          /* Ivory #FFF9F3 */
+        --foreground: 0 1% 14%;             /* Ink #242323 */
         --card: 0 0% 100%;
-        --card-foreground: 25 20% 15%;
+        --card-foreground: 0 1% 14%;
         --popover: 0 0% 100%;
-        --popover-foreground: 25 20% 15%;
-        --primary: 25 100% 50%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 25 100% 88%;
-        --secondary-foreground: 25 20% 15%;
-        --muted: 30 30% 93%;
-        --muted-foreground: 25 10% 45%;
-        --accent: 75 85% 72%;
-        --accent-foreground: 25 20% 15%;
-        --destructive: 0 84% 60%;
+        --popover-foreground: 0 1% 14%;
+        --primary: 17 100% 61%;             /* Tangerine #FF7138 */
+        --primary-foreground: 0 1% 14%;
+        --secondary: 40 18% 93%;            /* Stone #F1EFEB */
+        --secondary-foreground: 0 1% 14%;
+        --muted: 40 18% 93%;
+        --muted-foreground: 27 5% 40%;      /* #6B6560, 5.5:1 on ivory */
+        --accent: 20 100% 92%;              /* Peach #FFE5D8 */
+        --accent-foreground: 0 1% 14%;
+        --destructive: 4 76% 40%;           /* Brick #B42318 */
         --destructive-foreground: 0 0% 100%;
-        --border: 25 30% 90%;
-        --input: 25 30% 90%;
-        --ring: 25 100% 50%;
-        --radius: 1rem;
+        --border: 34 27% 88%;               /* #E9E2D9 */
+        --input: 34 27% 88%;
+        --ring: 17 100% 61%;
+        --radius: 0.75rem;
     }
 }
 
@@ -50,78 +38,109 @@ code {
     * {
         @apply border-border;
     }
+    html {
+        scroll-behavior: smooth;
+    }
     body {
-        @apply bg-background text-foreground;
+        @apply bg-background text-foreground font-sans antialiased;
+        font-feature-settings: 'cv11', 'ss01';
+    }
+    h1, h2, h3 {
+        @apply font-heading tracking-tight;
+        font-optical-sizing: auto;
+    }
+    h4, h5, h6 {
+        @apply font-sans font-semibold;
+    }
+    ::selection {
+        background: #FFE5D8;
+        color: #242323;
+    }
+    *:focus-visible {
+        outline: 2px solid #FF7138;
+        outline-offset: 2px;
+    }
+    code {
+        font-family: 'JetBrains Mono', ui-monospace, Menlo, Monaco, Consolas, monospace;
     }
 }
 
 @layer components {
+    /* Legacy helpers kept so older markup stays on-brand. */
     .btn-primary {
-        @apply bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-8 py-3 font-bold shadow-soft-orange transition-all hover:scale-105 active:scale-95;
+        @apply inline-flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary-hover rounded-md px-5 py-2.5 font-semibold transition-colors;
     }
-    
     .btn-secondary {
-        @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 rounded-full px-8 py-3 font-bold transition-all hover:scale-105 active:scale-95;
+        @apply inline-flex items-center justify-center bg-secondary text-secondary-foreground hover:bg-stone rounded-md px-5 py-2.5 font-semibold transition-colors;
     }
-    
     .btn-outline {
-        @apply border-2 border-primary text-primary hover:bg-primary/10 rounded-full px-8 py-3 font-bold transition-all;
+        @apply inline-flex items-center justify-center border border-border bg-white text-foreground hover:bg-stone rounded-md px-5 py-2.5 font-semibold transition-colors;
     }
-    
     .card-orange {
-        @apply bg-white rounded-3xl border border-orange-100 shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-1;
+        @apply bg-card rounded-xl border border-border shadow-card transition-shadow duration-200 hover:shadow-lift;
     }
-    
     .input-orange {
-        @apply rounded-2xl border-orange-200 bg-white px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder:text-muted-foreground/50;
+        @apply rounded-md border-border bg-white px-3 py-2 focus:ring-2 focus:ring-primary/40 focus:border-primary transition-colors placeholder:text-muted-foreground/70;
     }
-    
     .gradient-hero {
-        @apply bg-gradient-to-br from-orange-50 via-white to-orange-100;
+        @apply bg-background;
+        background-image:
+            radial-gradient(60rem 30rem at 85% -10%, rgba(255, 113, 56, 0.12), transparent 60%),
+            radial-gradient(40rem 24rem at -10% 10%, rgba(73, 52, 77, 0.06), transparent 60%);
     }
-    
     .text-gradient {
-        @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-orange-600;
+        @apply bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-orange-800;
+    }
+
+    /* Orange system primitives */
+    .surface {
+        @apply bg-card border border-border rounded-xl;
+    }
+    .eyebrow {
+        @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+    }
+    .display {
+        @apply font-display font-medium tracking-tight;
+    }
+    .num {
+        font-variant-numeric: tabular-nums;
+    }
+    .hairline {
+        @apply border-t border-border;
     }
 }
 
 @layer utilities {
-    .animate-fade-in {
-        animation: fade-in 0.5s ease-out forwards;
-    }
-    
     .animate-fade-in-delay-1 {
-        animation: fade-in 0.5s ease-out 0.1s forwards;
-        opacity: 0;
+        animation: fade-in 0.25s ease-out 0.05s both;
     }
-    
     .animate-fade-in-delay-2 {
-        animation: fade-in 0.5s ease-out 0.2s forwards;
-        opacity: 0;
+        animation: fade-in 0.25s ease-out 0.1s both;
     }
-    
     .animate-fade-in-delay-3 {
-        animation: fade-in 0.5s ease-out 0.3s forwards;
-        opacity: 0;
+        animation: fade-in 0.25s ease-out 0.15s both;
+    }
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
     }
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-    background: #F5EFE6;
-    border-radius: 4px;
+    background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-    background: #FFD8C2;
-    border-radius: 4px;
+    background: #E9E2D9;
+    border-radius: 999px;
+    border: 2px solid #FFF9F3;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-    background: #FF6B00;
+    background: #D6CCC0;
 }

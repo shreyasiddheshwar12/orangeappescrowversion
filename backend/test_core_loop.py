@@ -10,20 +10,28 @@ import os
 os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
 os.environ.setdefault("DB_NAME", "orange_test")
 os.environ.setdefault("JWT_SECRET", "ci-test-secret")
-os.environ.setdefault("RAZORPAY_KEY_ID", "rzp_test_dummy")
-os.environ.setdefault("RAZORPAY_KEY_SECRET", "dummy")
 
 import pytest
 from fastapi.testclient import TestClient
 from mongomock_motor import AsyncMongoMockClient
 
 import server
+from orange.payments.razorpay import RazorpayProvider
 
 
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setattr(server, "db", AsyncMongoMockClient()["orange_core_loop"])
+    for key in ("RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "PAYMENT_PROVIDER", "APP_ENV"):
+        monkeypatch.delenv(key, raising=False)
     return TestClient(server.app)
+
+
+def use_fake_razorpay(monkeypatch, handler):
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_dummy")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "dummy")
+    monkeypatch.setattr(RazorpayProvider, "_request", lambda self, method, path, **kw: handler(method, path, **kw))
+    monkeypatch.setattr(RazorpayProvider, "verify_signature", lambda self, *a: True)
 
 
 def auth(token):
@@ -119,11 +127,11 @@ def test_full_paid_collaboration_loop(client, monkeypatch):
         if path.startswith("/payments/pay_1"):
             return {"order_id": "order_1", "amount": 500000, "status": "captured"}
         raise AssertionError(path)
-    monkeypatch.setattr(server, "razorpay_request", fake_razorpay)
-    monkeypatch.setattr(server, "razorpay_signature_valid", lambda *a: True)
+    use_fake_razorpay(monkeypatch, fake_razorpay)
 
     order = client.post(f"/api/payments/campaigns/{camp['id']}/order", headers=auth(brand_token))
     assert order.status_code == 200, order.text
+    assert order.json()["provider"] == "razorpay"
     verified = client.post(f"/api/payments/campaigns/{camp['id']}/verify", headers=auth(brand_token), json={
         "razorpay_order_id": "order_1", "razorpay_payment_id": "pay_1", "razorpay_signature": "sig",
     }).json()
@@ -161,7 +169,61 @@ def test_legacy_pay_route_uses_payment_order_flow(client, monkeypatch):
     def fake_razorpay(method, path, **kwargs):
         seen["amount"] = kwargs["json"]["amount"]
         return {"id": "order_b", "amount": kwargs["json"]["amount"]}
-    monkeypatch.setattr(server, "razorpay_request", fake_razorpay)
+    use_fake_razorpay(monkeypatch, fake_razorpay)
     r = client.post(f"/api/campaigns/{camp['id']}/pay", headers=auth(brand_token))
     assert r.status_code == 200, r.text
     assert seen["amount"] == 10000  # 10% barter fee of Rs 1,000, in paise
+
+
+def test_simulated_provider_runs_full_lifecycle_without_keys(client):
+    creator_token = signup(client, "creator@x.com", "creator")
+    brand_token = signup(client, "brand@x.com", "business")
+    creator = make_creator(client, creator_token)
+    client.post("/api/business/profile", headers=auth(brand_token), json={"brandName": "Cafe", "industry": "Food"})
+    assert client.get("/api/payments/provider", headers=auth(brand_token)).json()["simulated"] is True
+    camp = client.post("/api/campaigns/", headers=auth(brand_token), json={
+        "receiverId": creator["id"], "receiverType": "creator", "campaignType": "paid", "deliverables": "1 reel", "budget": 3000,
+    }).json()
+    client.patch(f"/api/campaigns/{camp['id']}/respond?action=accept", headers=auth(creator_token))
+    order = client.post(f"/api/payments/campaigns/{camp['id']}/order", headers=auth(brand_token)).json()
+    assert order["checkout"] == "simulated" and order["amount"] == 300000
+
+    # Only the payer may settle; forged signatures are rejected.
+    assert client.post(f"/api/payments/simulated/{order['orderId']}/settle", headers=auth(creator_token)).status_code == 403
+    settled = client.post(f"/api/payments/simulated/{order['orderId']}/settle", headers=auth(brand_token)).json()
+    forged = {**settled, "razorpay_signature": "0" * 64}
+    assert client.post(f"/api/payments/campaigns/{camp['id']}/verify", headers=auth(brand_token), json=forged).status_code == 400
+    verified = client.post(f"/api/payments/campaigns/{camp['id']}/verify", headers=auth(brand_token), json=settled).json()
+    assert verified["status"] == "paid" and verified["simulated"] is True
+
+    client.post(f"/api/campaigns/{camp['id']}/submit-link?contentLink=https://instagram.com/reel/y", headers=auth(creator_token))
+    client.post(f"/api/campaigns/{camp['id']}/verify-link", headers=auth(brand_token))
+    done = client.post(f"/api/campaigns/{camp['id']}/complete", headers=auth(brand_token)).json()
+    assert done["payoutStatus"] == "released"
+
+    entries = run(server.db.ledger_entries.find({"campaignId": camp["id"]}, {"_id": 0}).to_list(10))
+    assert sorted((e["type"], e["amount"]) for e in entries) == [("commission", 300.0), ("funded", 3000.0), ("payout_released", 2700.0)]
+    assert all(e["simulated"] for e in entries)
+
+
+def test_simulated_payments_refused_in_production(client, monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    brand_token = signup(client, "brand@x.com", "business")
+    info = client.get("/api/payments/provider", headers=auth(brand_token)).json()
+    assert info["configured"] is False
+
+
+def test_chat_attachments_must_be_orange_uploads(client):
+    creator_token = signup(client, "creator@x.com", "creator")
+    brand_token = signup(client, "brand@x.com", "business")
+    creator = make_creator(client, creator_token)
+    client.post("/api/business/profile", headers=auth(brand_token), json={"brandName": "Cafe", "industry": "Food"})
+    camp = client.post("/api/campaigns/", headers=auth(brand_token), json={
+        "receiverId": creator["id"], "receiverType": "creator", "campaignType": "paid", "deliverables": "1 reel", "budget": 2000,
+    }).json()
+    run(server.db.campaigns.update_one({"id": camp["id"]}, {"$set": {"chatEnabled": True}}))
+    bad = client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "", "attachments": [{"url": "https://evil.example/x.png", "type": "image"}]})
+    assert bad.status_code == 400
+    ok = client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "Moodboard", "attachments": [{"url": "http://localhost:8000/uploads/abc.png", "type": "image", "name": "mood.png"}]})
+    assert ok.status_code == 201 and ok.json()["attachments"][0]["name"] == "mood.png"
+    assert client.post(f"/api/messages/{camp['id']}", headers=auth(brand_token), json={"content": "   "}).status_code == 400

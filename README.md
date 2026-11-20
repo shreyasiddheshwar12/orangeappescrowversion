@@ -35,6 +35,15 @@ Creator–brand marketplace with protected collaboration payments and an escrow-
 
 This is an **escrow-style application workflow and ledger**. Standard Razorpay Checkout does not by itself create a legally regulated escrow account. Production fund disbursement to creators requires an approved Razorpay Route setup and properly onboarded Linked Accounts.
 
+## Payment providers
+
+Payment execution sits behind `backend/orange/payments/` (`PaymentProvider`). Two providers exist:
+
+- `razorpay`: Razorpay Standard Checkout plus Route transfers (the flow described above).
+- `simulated`: for local development and demos. Orders are settled by the backend, no money moves, and every payment, payout and ledger entry is marked `simulated`. It is refused when `APP_ENV=production`.
+
+Set `PAYMENT_PROVIDER` to choose. When unset, Orange uses Razorpay if keys are present and the simulated provider otherwise. Every money movement is written to the `ledger_entries` collection.
+
 ## Local setup
 
 ### Backend
