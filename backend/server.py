@@ -21,6 +21,7 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from orange.payments import get_provider, provider_status, PaymentError
 from orange import ledger
+from orange.growth.router import build_router as build_growth_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -93,7 +94,7 @@ class CampaignResponse(BaseModel):
     id:str; senderId:str; senderType:str; senderName:str; receiverId:str; receiverType:str; receiverName:str; campaignType:str; deliverables:str; budget:float; productValue:float; barterFee:float; timeline:str; brief:str; barterDetails:str; status:str; paymentStatus:str; escrowAmount:float; platformCommission:float; creatorPayout:float; identityUnlocked:bool; chatEnabled:bool; contentLink:Optional[str]=None; linkVerified:bool=False; shippingDetails:Optional[str]=None; productReceived:bool=False; senderInstagram:Optional[str]=None; receiverInstagram:Optional[str]=None; createdAt:str; updatedAt:str; expiresAt:Optional[str]=None; payoutStatus:Optional[str]=None
 class Attachment(BaseModel): url:str; type:Literal['image','video','file']='file'; name:Optional[str]=None; size:Optional[int]=None
 class MessageCreate(BaseModel): content:str=''; attachments:Optional[List[Attachment]]=None
-class MessageResponse(BaseModel): id:str; campaignId:str; senderId:str; senderType:str; content:str; blocked:bool=False; attachments:List[Attachment]=[]; createdAt:str
+class MessageResponse(BaseModel): id:str; campaignId:str; senderId:str; senderType:str; content:str; blocked:bool=False; flagged:bool=False; attachments:List[Attachment]=[]; createdAt:str
 class InstagramVerifyRequest(BaseModel): instagramUsername:str
 class InstagramVerifyResponse(BaseModel): success:bool; instagramUserId:str; followersCount:int; engagementRate:float; message:str
 class InstagramStatusResponse(BaseModel): connected:bool; instagramUserId:Optional[str]=None; instagramUsername:Optional[str]=None; followersCount:Optional[int]=None; engagementRate:Optional[float]=None
@@ -606,8 +607,9 @@ async def messages_send(campaign_id:str,message:MessageCreate,current_user=Depen
     if not message.content.strip() and not attachments: raise HTTPException(status_code=400,detail='Message is empty')
     upload_base=os.environ.get('BACKEND_PUBLIC_URL','http://localhost:8000').rstrip('/')+'/uploads/'
     if any(not a['url'].startswith(upload_base) for a in attachments): raise HTTPException(status_code=400,detail='Attachments must be uploaded to Orange first')
-    blocked=check_blocked_content(message.content); now=datetime.now(timezone.utc).isoformat(); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'senderId':current_user['id'],'senderType':current_user['role'],'content':message.content if not blocked else '[Message blocked - external contact not allowed]','blocked':blocked,'attachments':attachments,'createdAt':now};
-    if blocked: await db.bypass_attempts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'userId':current_user['id'],'content':message.content,'createdAt':now})
+    # Contact details are allowed but flagged: both sides see a reminder that deals and payments outside Orange aren't protected.
+    flagged=check_blocked_content(message.content); now=datetime.now(timezone.utc).isoformat(); doc={'id':str(uuid.uuid4()),'campaignId':campaign_id,'senderId':current_user['id'],'senderType':current_user['role'],'content':message.content,'blocked':False,'flagged':flagged,'attachments':attachments,'createdAt':now};
+    if flagged: await db.bypass_attempts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'userId':current_user['id'],'content':message.content,'createdAt':now})
     await db.messages.insert_one(doc); return MessageResponse(**doc)
 
 @api_router.post('/seed')
@@ -635,7 +637,9 @@ async def blacklist(user_id:str,reason:str=Query(...),current_user=Depends(get_c
     if not current_user.get('isAdmin',False): raise HTTPException(status_code=403,detail='Admin access required')
     await db.users.update_one({'id':user_id},{'$set':{'isBlacklisted':True}}); await db.creator_profiles.update_one({'userId':user_id},{'$set':{'isBlacklisted':True}}); await db.campaigns.update_many({'$or':[{'senderUserId':user_id},{'receiverUserId':user_id}], 'status':{'$in':['requested','accepted','paid','in_progress','link_submitted','link_verified']}},{'$set':{'status':'cancelled','updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'success':True,'message':'User blacklisted'}
 
-api_router.include_router(auth_router); api_router.include_router(creator_router); api_router.include_router(business_router); api_router.include_router(marketplace_router); api_router.include_router(campaign_router); api_router.include_router(payment_router); api_router.include_router(message_router); api_router.include_router(admin_router)
+async def growth_create_request(payload:dict,user:dict)->dict: return (await create_campaign(CampaignCreate(**payload),current_user=user)).model_dump()
+growth_router=build_growth_router(lambda: db,get_current_user,growth_create_request)
+api_router.include_router(growth_router); api_router.include_router(auth_router); api_router.include_router(creator_router); api_router.include_router(business_router); api_router.include_router(marketplace_router); api_router.include_router(campaign_router); api_router.include_router(payment_router); api_router.include_router(message_router); api_router.include_router(admin_router)
 app.include_router(api_router)
 app.add_middleware(CORSMiddleware,allow_origins=CORS_ORIGINS,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 @app.on_event('startup')
@@ -645,6 +649,7 @@ async def startup():
         for col in ('creator_profiles','brand_profiles'): await db[col].create_index('id',unique=True); await db[col].create_index('userId')
         await db.campaigns.create_index('id',unique=True); await db.campaigns.create_index('senderUserId'); await db.campaigns.create_index('receiverUserId')
         await db.messages.create_index([('campaignId',1),('createdAt',1)]); await db.ratings.create_index('targetId'); await db.payments.create_index('razorpayOrderId')
+        await db.agent_runs.create_index([('brandUserId',1),('createdAt',-1)]); await db.agent_steps.create_index([('runId',1),('order',1)]); await db.campaigns.create_index('growthCampaignId',sparse=True)
     except Exception as exc: logger.warning('Index creation skipped: %s',exc)
     logger.info('Orange API started')
 @app.on_event('shutdown')

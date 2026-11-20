@@ -188,5 +188,13 @@ export const paymentsAPI = {
   createOrder: (campaignId) => campaignAPI.createPaymentOrder(campaignId),
   verifyPayment: (campaignId, data) => campaignAPI.verifyPayment(campaignId, data),
 };
+export const growthAPI = {
+  status: () => api.get('/growth/status'),
+  listRuns: () => api.get('/growth/runs'),
+  getRun: (id) => api.get(`/growth/runs/${id}`),
+  startRun: (data) => api.post('/growth/runs', data),
+  approve: (id, data) => api.post(`/growth/runs/${id}/approve`, data),
+  dismiss: (id) => api.post(`/growth/runs/${id}/cancel`),
+};
 export const requestsAPI = { respond: (id, action) => campaignAPI.respond(id, action) };
 export default api;
