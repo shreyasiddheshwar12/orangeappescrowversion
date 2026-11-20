@@ -55,7 +55,7 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-screen gradient-hero flex items-center justify-center p-6">
+    <div className="relative overflow-hidden min-h-screen gradient-hero flex items-center justify-center p-6">
       {/* Decorative blobs */}
       <div className="absolute top-20 right-10 w-72 h-72 bg-primary/10 rounded-full blur-3xl" />
       <div className="absolute bottom-20 left-10 w-96 h-96 bg-accent/10 rounded-full blur-3xl" />

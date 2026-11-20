@@ -113,7 +113,7 @@ def test_saved_creators_and_ledger(client):
     assert client.post(f"/api/campaigns/{camp['id']}/repeat", headers=auth(ct)).status_code == 403
 
     brand_ledger = client.get("/api/payments/ledger", headers=auth(bt)).json()
-    assert [(e["type"], e["amount"], e["direction"]) for e in brand_ledger] == [("funded", 3000.0, "out")]
+    assert [(e["type"], e["amount"], e["direction"]) for e in brand_ledger] == [("payout_released", 2700.0, "none"), ("funded", 3000.0, "out")]
     creator_ledger = client.get("/api/payments/ledger", headers=auth(ct)).json()
     assert sorted((e["type"], e["amount"], e["direction"]) for e in creator_ledger) == [("commission", 300.0, "out"), ("payout_released", 2700.0, "in")]
     assert creator_ledger[0]["counterpart"] == "Third Wave Corner"
