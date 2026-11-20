@@ -19,6 +19,8 @@ from urllib.parse import urlencode
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from orange.payments import get_provider, provider_status, PaymentError
+from orange import ledger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -36,7 +38,6 @@ REQUEST_EXPIRY_HOURS = 72
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
 RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
-RAZORPAY_API_BASE = 'https://api.razorpay.com/v1'
 INSTAGRAM_APP_ID = os.environ.get('INSTAGRAM_APP_ID', '')
 INSTAGRAM_APP_SECRET = os.environ.get('INSTAGRAM_APP_SECRET', '')
 INSTAGRAM_REDIRECT_URI = os.environ.get('INSTAGRAM_REDIRECT_URI', 'http://localhost:8000/api/auth/instagram/callback')
@@ -115,17 +116,6 @@ def measured_engagement(x:dict)->Optional[float]:
     # Only report engagement that came from a real measurement. Older records may hold a randomly generated value.
     return x.get('engagementRate') if x.get('engagementMeasured') and x.get('engagementRate') is not None else None
 def check_blocked_content(message:str)->bool: return any(re.search(p,message.lower(),re.I) for p in BLOCKED_PATTERNS)
-def razorpay_configured()->bool: return bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
-def razorpay_request(method:str,path:str,**kwargs):
-    if not razorpay_configured(): raise HTTPException(status_code=503,detail='Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to backend/.env.')
-    response=requests.request(method,f'{RAZORPAY_API_BASE}{path}',auth=(RAZORPAY_KEY_ID,RAZORPAY_KEY_SECRET),timeout=20,**kwargs)
-    if response.status_code>=400:
-        try: detail=response.json().get('error',{}).get('description','Razorpay API error')
-        except Exception: detail='Razorpay API error'
-        raise HTTPException(status_code=502,detail=detail)
-    return response.json()
-def razorpay_signature_valid(order_id,payment_id,signature):
-    expected=hmac.new(RAZORPAY_KEY_SECRET.encode(),f'{order_id}|{payment_id}'.encode(),hashlib.sha256).hexdigest(); return hmac.compare_digest(expected,signature)
 def mask_campaign_identity(c,current_user_id):
     x={**c}
     if not x.get('identityUnlocked',False):
@@ -434,27 +424,52 @@ async def respond(campaign_id:str,action:Literal['accept','reject']=Query(...),c
     if c['status']!='requested': raise HTTPException(status_code=400,detail='Campaign already responded to')
     new='accepted' if action=='accept' else 'cancelled'; await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':new,'updatedAt':datetime.now(timezone.utc).isoformat()}}); return {'status':new,'message':'Request accepted. Brand can now pay.' if action=='accept' else 'Request rejected.'}
 
+def payment_http_error(exc:PaymentError)->HTTPException: return HTTPException(status_code=exc.status_code,detail=str(exc))
+def active_provider(name:Optional[str]=None):
+    try: return get_provider(db,name)
+    except PaymentError as exc: raise payment_http_error(exc)
+
+@payment_router.get('/provider')
+async def payment_provider_info(current_user=Depends(get_current_user)): return provider_status(db)
+
 @payment_router.post('/campaigns/{campaign_id}/order')
 async def create_payment_order(campaign_id:str,current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can fund this collaboration')
-    if c['status']!='accepted': raise HTTPException(status_code=400,detail='Campaign must be accepted before payment')
+    if c['status'] not in ('accepted','payment_pending'): raise HTTPException(status_code=400,detail='Campaign must be accepted before payment')
     if c.get('paymentStatus')=='paid': raise HTTPException(status_code=400,detail='Already paid')
     amount=c['escrowAmount'] if c['campaignType']=='paid' else c['barterFee'];
     if amount<=0: raise HTTPException(status_code=400,detail='No payable amount configured')
-    order=razorpay_request('POST','/orders',json={'amount':int(round(amount*100)),'currency':'INR','receipt':f"orange_{campaign_id[:12]}_{int(datetime.now(timezone.utc).timestamp())}",'notes':{'campaign_id':campaign_id,'payment_type':'escrow' if c['campaignType']=='paid' else 'barter_fee'}}); now=datetime.now(timezone.utc).isoformat()
+    provider=active_provider(); payment_type='escrow' if c['campaignType']=='paid' else 'barter_fee'
+    try: order=await provider.create_order(int(round(amount*100)),f"orange_{campaign_id[:12]}_{int(datetime.now(timezone.utc).timestamp())}",{'campaign_id':campaign_id,'payment_type':payment_type})
+    except PaymentError as exc: raise payment_http_error(exc)
+    now=datetime.now(timezone.utc).isoformat()
     await db.payments.update_many({'campaignId':campaign_id,'status':{'$in':['created','pending']}},{'$set':{'status':'superseded','updatedAt':now}})
-    await db.payments.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'userId':current_user['id'],'amount':amount,'amountPaise':order['amount'],'paymentType':'escrow' if c['campaignType']=='paid' else 'barter_fee','status':'created','mode':'razorpay','razorpayOrderId':order['id'],'createdAt':now,'updatedAt':now})
+    await db.payments.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'userId':current_user['id'],'amount':amount,'amountPaise':order['amount'],'paymentType':payment_type,'status':'created','mode':provider.name,'orderId':order['id'],'razorpayOrderId':order['id'],'createdAt':now,'updatedAt':now})
     # Keep status=accepted so the existing dashboard's Pay action remains available after a cancelled checkout.
-    await db.campaigns.update_one({'id':campaign_id},{'$set':{'razorpayOrderId':order['id'],'updatedAt':now}})
-    return {'success':True,'keyId':RAZORPAY_KEY_ID,'orderId':order['id'],'amount':order['amount'],'currency':'INR','campaignId':campaign_id,'name':'Orange','description':'Orange protected marketplace payment','prefill':{'email':current_user.get('email','')}}
+    await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'accepted','razorpayOrderId':order['id'],'paymentProvider':provider.name,'updatedAt':now}})
+    return {'success':True,'provider':provider.name,'checkout':provider.checkout,'simulated':provider.name=='simulated','keyId':provider.public_key,'orderId':order['id'],'amount':order['amount'],'currency':'INR','campaignId':campaign_id,'name':'Orange','description':'Orange protected marketplace payment','prefill':{'email':current_user.get('email','')}}
+
+@payment_router.post('/simulated/{order_id}/settle')
+async def settle_simulated_order(order_id:str,current_user=Depends(get_current_user)):
+    record=await db.payments.find_one({'orderId':order_id,'mode':'simulated'},{'_id':0})
+    if not record: raise HTTPException(status_code=404,detail='Simulated order not found')
+    if record['userId']!=current_user['id']: raise HTTPException(status_code=403,detail='Only the payer can settle this order')
+    provider=active_provider('simulated')
+    try: return await provider.settle_order(order_id)
+    except PaymentError as exc: raise payment_http_error(exc)
 
 async def finalize_verified_payment(c,payment_record,razorpay_payment_id):
-    now=datetime.now(timezone.utc).isoformat(); identity=c['campaignType']=='paid'
-    await db.payments.update_one({'id':payment_record['id']},{'$set':{'status':'paid','razorpayPaymentId':razorpay_payment_id,'signatureVerified':True,'paidAt':now,'updatedAt':now}})
-    await db.campaigns.update_one({'id':c['id']},{'$set':{'status':'paid','paymentStatus':'paid','identityUnlocked':identity,'chatEnabled':True,'razorpayPaymentId':razorpay_payment_id,'paymentVerifiedAt':now,'updatedAt':now}})
-    response={'success':True,'status':'paid','chatEnabled':True,'identityUnlocked':identity,'amountPaid':payment_record['amount'],'paymentType':payment_record['paymentType'],'message':'Payment verified. Escrow is funded and chat is unlocked.' if identity else 'Payment verified. Barter fee is paid and chat is unlocked.'}
+    now=datetime.now(timezone.utc).isoformat(); identity=c['campaignType']=='paid'; mode=payment_record.get('mode','razorpay')
+    await db.payments.update_one({'id':payment_record['id']},{'$set':{'status':'paid','razorpayPaymentId':razorpay_payment_id,'providerPaymentId':razorpay_payment_id,'signatureVerified':True,'paidAt':now,'updatedAt':now}})
+    await db.campaigns.update_one({'id':c['id']},{'$set':{'status':'paid','paymentStatus':'paid','identityUnlocked':identity,'chatEnabled':True,'razorpayPaymentId':razorpay_payment_id,'paymentProvider':mode,'paymentVerifiedAt':now,'updatedAt':now}})
+    if identity:
+        await ledger.record(db,campaign_id=c['id'],entry_type='funded',amount=payment_record['amount'],provider=mode,payment_id=razorpay_payment_id,meta={'heldFor':'creator payout'})
+    else:
+        await ledger.record(db,campaign_id=c['id'],entry_type='barter_fee',amount=payment_record['amount'],provider=mode,payment_id=razorpay_payment_id)
+    suffix=' (simulated payment, no money moved)' if mode=='simulated' else ''
+    response={'success':True,'status':'paid','provider':mode,'simulated':mode=='simulated','chatEnabled':True,'identityUnlocked':identity,'amountPaid':payment_record['amount'],'paymentType':payment_record['paymentType'],'message':('Payment verified. Funds are held for the creator and chat is unlocked.' if identity else 'Payment verified. Barter fee is paid and chat is unlocked.')+suffix}
     if identity:
         sc,rc=identity_and_instagram(c); sp=await db[sc].find_one({'id':c['senderId']},{'_id':0}); rp=await db[rc].find_one({'id':c['receiverId']},{'_id':0}); response['senderInstagram']=sp.get('instagramUsername') if sp else None; response['receiverInstagram']=rp.get('instagramUsername') if rp else None
     return response
@@ -464,15 +479,18 @@ async def verify_payment(campaign_id:str,payment:PaymentVerifyRequest,current_us
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
     if not c: raise HTTPException(status_code=404,detail='Campaign not found')
     if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can verify this payment')
-    if not razorpay_signature_valid(payment.razorpay_order_id,payment.razorpay_payment_id,payment.razorpay_signature): raise HTTPException(status_code=400,detail='Invalid Razorpay payment signature')
     record=await db.payments.find_one({'campaignId':campaign_id,'razorpayOrderId':payment.razorpay_order_id},{'_id':0});
     if not record: raise HTTPException(status_code=400,detail='Payment order not recognized')
+    provider=active_provider(record.get('mode','razorpay'))
+    if not provider.verify_signature(payment.razorpay_order_id,payment.razorpay_payment_id,payment.razorpay_signature): raise HTTPException(status_code=400,detail='Invalid payment signature')
     if record.get('status')=='paid': return {'success':True,'status':'paid','chatEnabled':True,'identityUnlocked':c.get('identityUnlocked',False),'message':'Payment already verified'}
-    rp=razorpay_request('GET',f'/payments/{payment.razorpay_payment_id}')
-    if rp.get('order_id')!=payment.razorpay_order_id: raise HTTPException(status_code=400,detail='Payment does not belong to this order')
-    expected=int(round(record['amount']*100));
-    if int(rp.get('amount',0))!=expected: raise HTTPException(status_code=400,detail='Payment amount mismatch')
-    if rp.get('status')=='authorized': razorpay_request('POST',f"/payments/{payment.razorpay_payment_id}/capture",json={'amount':expected,'currency':'INR'}); rp=razorpay_request('GET',f'/payments/{payment.razorpay_payment_id}')
+    try:
+        rp=await provider.fetch_payment(payment.razorpay_payment_id)
+        if rp.get('order_id')!=payment.razorpay_order_id: raise HTTPException(status_code=400,detail='Payment does not belong to this order')
+        expected=int(round(record['amount']*100));
+        if int(rp.get('amount',0))!=expected: raise HTTPException(status_code=400,detail='Payment amount mismatch')
+        if rp.get('status')=='authorized': await provider.capture(payment.razorpay_payment_id,expected); rp=await provider.fetch_payment(payment.razorpay_payment_id)
+    except PaymentError as exc: raise payment_http_error(exc)
     if rp.get('status')!='captured': raise HTTPException(status_code=400,detail=f"Payment is not captured: {rp.get('status')}")
     return await finalize_verified_payment(c,record,payment.razorpay_payment_id)
 
@@ -529,11 +547,17 @@ async def verify_link(campaign_id:str,current_user=Depends(get_current_user)):
 
 async def release_escrow(c):
     if c['campaignType']!='paid': return {'released':False,'amount':0,'reason':'not_applicable'}
-    uid=creator_user_id(c); user=await db.users.find_one({'id':uid},{'_id':0}); account_id=user.get('razorpayLinkedAccountId') if user else None; amount=c.get('creatorPayout',0)
-    if not account_id: return {'released':False,'amount':amount,'reason':'creator_linked_account_not_configured'}
-    pid=c.get('razorpayPaymentId');
+    amount=c.get('creatorPayout',0); pid=c.get('razorpayPaymentId'); mode=c.get('paymentProvider','razorpay')
     if not pid: return {'released':False,'amount':amount,'reason':'payment_missing'}
-    transfer=razorpay_request('POST',f'/payments/{pid}/transfers',json={'transfers':[{'account':account_id,'amount':int(round(amount*100)),'currency':'INR','on_hold':False,'notes':{'campaign_id':c['id']}}]}); items=transfer.get('items',[]); return {'released':True,'amount':amount,'transferId':(items[0].get('id') if items else transfer.get('id'))}
+    if mode=='simulated':
+        provider=active_provider('simulated'); account_id='simulated'
+    else:
+        uid=creator_user_id(c); user=await db.users.find_one({'id':uid},{'_id':0}); account_id=user.get('razorpayLinkedAccountId') if user else None
+        if not account_id: return {'released':False,'amount':amount,'reason':'creator_linked_account_not_configured'}
+        provider=active_provider(mode)
+    try: transfer=await provider.transfer_to_creator(pid,account_id,int(round(amount*100)),{'campaign_id':c['id']})
+    except PaymentError as exc: raise payment_http_error(exc)
+    return {'released':True,'amount':amount,'transferId':transfer.get('id'),'provider':mode}
 @campaign_router.post('/{campaign_id}/complete')
 async def complete(campaign_id:str,current_user=Depends(get_current_user)):
     c=await db.campaigns.find_one({'id':campaign_id},{'_id':0});
@@ -541,7 +565,11 @@ async def complete(campaign_id:str,current_user=Depends(get_current_user)):
     if brand_user_id(c)!=current_user['id']: raise HTTPException(status_code=403,detail='Only the brand can complete')
     if c['status']!='link_verified': raise HTTPException(status_code=400,detail='Link must be verified before completion')
     result=await release_escrow(c); now=datetime.now(timezone.utc).isoformat(); await db.campaigns.update_one({'id':campaign_id},{'$set':{'status':'completed','payoutStatus':'released' if result['released'] else 'pending','updatedAt':now}})
-    if result['released']: await db.payouts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'creatorUserId':creator_user_id(c),'amount':result['amount'],'status':'released','transferId':result.get('transferId'),'createdAt':now})
+    mode=c.get('paymentProvider','razorpay')
+    if result['released']: await db.payouts.insert_one({'id':str(uuid.uuid4()),'campaignId':campaign_id,'creatorUserId':creator_user_id(c),'amount':result['amount'],'status':'released','transferId':result.get('transferId'),'provider':mode,'createdAt':now})
+    if c['campaignType']=='paid':
+        await ledger.record(db,campaign_id=campaign_id,entry_type='payout_released' if result['released'] else 'payout_pending',amount=result['amount'],provider=mode,payment_id=c.get('razorpayPaymentId'),meta={'transferId':result.get('transferId'),'reason':result.get('reason')})
+        await ledger.record(db,campaign_id=campaign_id,entry_type='commission',amount=c.get('platformCommission',0),provider=mode,payment_id=c.get('razorpayPaymentId'))
     await db.creator_profiles.update_one({'userId':creator_user_id(c)},{'$inc':{'totalCollabs':1}}); return {'success':True,'status':'completed','payoutAmount':result['amount'],'payoutStatus':'released' if result['released'] else 'pending','message':'Campaign completed! Creator payout released.' if result['released'] else 'Campaign completed. Creator payout is pending linked-account setup.'}
 @campaign_router.post('/{campaign_id}/rate')
 async def rate(campaign_id:str,rating:int=Query(...,ge=1,le=5),feedback:str=Query(...,min_length=10),current_user=Depends(get_current_user)):
